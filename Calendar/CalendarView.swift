@@ -1,11 +1,10 @@
 import SwiftUI
+import EventKit
 
 struct CalendarView: View {
     @State private var currentDate = Date()
     @State private var selectedDate = Date()
-    @State private var memos: [String: [String]] = [
-        dateKey(from: Date()): ["Meeting 10:00", "Workout"]
-    ]
+    @StateObject private var eventStore = EventStoreManager.shared
     @State private var dragOffset: CGFloat = 0
     @State private var isDragging = false
     
@@ -161,6 +160,15 @@ struct CalendarView: View {
                                 }
                             }
                     )
+                    .onAppear {
+                        loadEvents(for: selectedDate)
+                    }
+                    .onChange(of: selectedDate) { _, newValue in
+                        loadEvents(for: newValue)
+                    }
+                    .onChange(of: currentDate) { _, _ in
+                        loadEvents(for: selectedDate)
+                    }
                     
                     // Content layer
                     VStack(spacing: 8) {
@@ -170,14 +178,24 @@ struct CalendarView: View {
                         // Main content area
                         VStack(spacing: 15) {
                             // Memo list
-                            if let memosForDate = memos[dateKey(from: selectedDate)], !memosForDate.isEmpty {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("SCHEDULE")
-                                        .font(.system(size: 14, weight: .bold))
-                                        .foregroundColor(.gray.opacity(0.8))
-                                        .padding(.bottom, 5)
-                                    
-                                    ForEach(memosForDate, id: \.self) { memo in
+                            let memos = memosForSelectedDate()
+                            if !memos.isEmpty {
+                                MemoListView(memos: Array(memos.prefix(2)))
+                                Text("SCHEDULE")
+                                    .font(.system(size: 14, weight: .bold))
+                                    .foregroundColor(.gray.opacity(0.8))
+                                    .padding(.bottom, 5)
+                                ForEach(memos, id: \.self) { memo in
+                                    HStack(alignment: .top, spacing: 10) {
+                                        Circle()
+                                            .fill(Color.blue)
+                                            .frame(width: 6, height: 6)
+                                            .padding(.top, 6)
+                                        Text(memo)
+                                            .font(.system(size: 16))
+                                            .foregroundColor(.black)
+                                            .lineLimit(2)
+                                        Spacer()
                                         HStack(alignment: .top, spacing: 10) {
                                             Circle()
                                                 .fill(Color.blue)
@@ -232,20 +250,12 @@ struct CalendarView: View {
                     VStack(spacing: 5) {
                         // First row - current and next month
                         HStack(spacing: 5) {
-                            MonthView(
-                                // date: Calendar.current.date(byAdding: .month, value: -1, to: currentDate) ?? Date(),
-                                date: currentDate,
-                                selectedDate: $selectedDate,
-                                memos: $memos,
-                                isCurrentMonth: true
-                            )
-                            
-                            MonthView(
-                                date: Calendar.current.date(byAdding: .month, value: 1, to: currentDate) ?? Date(),
-                                selectedDate: $selectedDate,
-                                memos: $memos,
-                                isCurrentMonth: false
-                            )
+                            MonthView(date: currentDate, selectedDate: $selectedDate, eventStore: eventStore, isCurrentMonth: true)
+                            MonthView(date: Calendar.current.date(byAdding: .month, value: 1, to: currentDate) ?? currentDate, selectedDate: $selectedDate, eventStore: eventStore, isCurrentMonth: false)
+                        }
+                        HStack(spacing: 5) {
+                            MonthView(date: Calendar.current.date(byAdding: .month, value: 2, to: currentDate) ?? currentDate, selectedDate: $selectedDate, eventStore: eventStore, isCurrentMonth: false)
+                            MonthView(date: Calendar.current.date(byAdding: .month, value: 3, to: currentDate) ?? currentDate, selectedDate: $selectedDate, eventStore: eventStore, isCurrentMonth: false)
                         }
                     }
                     
@@ -266,66 +276,67 @@ struct CalendarView: View {
             }
         }
     }
-
-    private func generateDaysInMonth(for date: Date) -> [DayInfo] {
-        var days = [DayInfo]()
-        let calendar = Calendar.current
-        
-        // Get first day of the month
-        let components = calendar.dateComponents([.year, .month], from: date)
-        guard let firstOfMonth = calendar.date(from: components) else { return [] }
-        
-        // Get weekday of first day (0=Sunday)
-        let firstWeekday = calendar.component(.weekday, from: firstOfMonth) - 1
-        
-        // Add previous month's days
-        if firstWeekday > 0 {
-            for i in (0..<firstWeekday).reversed() {
-                if let prevDate = calendar.date(byAdding: .day, value: -i-1, to: firstOfMonth) {
-                    days.append(DayInfo(day: calendar.component(.day, from: prevDate), 
-                                      date: prevDate, 
-                                      isCurrentMonth: false))
-                }
-            }
-        }
-        
-        // Add current month's days
-        let range = calendar.range(of: .day, in: .month, for: date) ?? 1..<1
-        for day in 1...range.count {
-            if let date = calendar.date(bySetting: .day, value: day, of: firstOfMonth) {
-                days.append(DayInfo(day: day, date: date, isCurrentMonth: true))
-            }
-        }
-        
-        // Add next month's days to fill the grid (6 weeks)
-        let totalDays = 42 // 6 weeks * 7 days
-        let remaining = totalDays - days.count
-        if remaining > 0, let lastDate = days.last?.date {
-            for i in 1...remaining {
-                if let nextDate = calendar.date(byAdding: .day, value: i, to: lastDate) {
-                    days.append(DayInfo(day: calendar.component(.day, from: nextDate), 
-                                      date: nextDate, 
-                                      isCurrentMonth: false))
-                }
-            }
-        }
-        
-        return days
-    }
     
     private func isSameDay(_ date1: Date, _ date2: Date) -> Bool {
         let calendar = Calendar.current
         return calendar.isDate(date1, inSameDayAs: date2)
     }
     
-    private static func dateKey(from date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter.string(from: date)
+    private func generateDaysInMonth(for date: Date) -> [DayInfo] {
+        var days = [DayInfo]()
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month], from: date)
+        guard let firstDayOfMonth = calendar.date(from: components) else { return [] }
+        let firstWeekday = calendar.component(.weekday, from: firstDayOfMonth)
+        let range = calendar.range(of: .day, in: .month, for: date) ?? 1..<1
+        let numDays = range.count
+        let prevMonth = calendar.date(byAdding: .month, value: -1, to: date)!
+        let prevMonthRange = calendar.range(of: .day, in: .month, for: prevMonth) ?? 1..<1
+        let prevMonthDays = prevMonthRange.count
+
+        for i in (firstWeekday - 2)..<0 {
+            let day = prevMonthDays + i + 1
+            if let prevDate = calendar.date(byAdding: .day, value: -i-1, to: firstDayOfMonth) {
+                days.append(DayInfo(day: day, date: prevDate, isCurrentMonth: false))
+            }
+        }
+
+        let today = calendar.startOfDay(for: Date())
+        let selected = calendar.startOfDay(for: selectedDate)
+        for day in 1...numDays {
+            let dateComponents = DateComponents(year: components.year, month: components.month, day: day)
+            if let currentDate = calendar.date(from: dateComponents) {
+                var info = DayInfo(day: day, date: currentDate, isCurrentMonth: true)
+                info.isToday = calendar.isDate(currentDate, inSameDayAs: today)
+                info.isSelected = calendar.isDate(currentDate, inSameDayAs: selected)
+                info.hasEvent = !(eventStore.events[eventStore.dateKey(from: currentDate)]?.isEmpty ?? true)
+                days.append(info)
+            }
+        }
+
+        let totalDays = 42
+        let remaining = totalDays - days.count
+        if remaining > 0, let lastDate = days.last?.date {
+            for _ in 1...remaining {
+                if let nextDate = calendar.date(byAdding: .day, value: 1, to: lastDate) {
+                    days.append(DayInfo(day: calendar.component(.day, from: nextDate), date: nextDate, isCurrentMonth: false))
+                }
+            }
+        }
+        return days
     }
     
-    private func dateKey(from date: Date) -> String {
-        CalendarView.dateKey(from: date)
+
+    
+    private func loadEvents(for date: Date) {
+        Task {
+            // This will trigger a fetch if the events aren't cached
+            _ = eventStore.fetchEvents(for: date)
+        }
+    }
+    
+    private func memosForSelectedDate() -> [String] {
+        eventStore.events[eventStore.dateKey(from: selectedDate)] ?? []
     }
     
     private func dayString(date: Date) -> String {
@@ -355,6 +366,9 @@ struct DayInfo: Identifiable {
     let day: Int
     let date: Date
     let isCurrentMonth: Bool
+    var isToday: Bool = false
+    var isSelected: Bool = false
+    var hasEvent: Bool = false
     
     init(day: Int, date: Date, isCurrentMonth: Bool) {
         self.day = day
@@ -363,48 +377,12 @@ struct DayInfo: Identifiable {
     }
 }
 
-struct DayView: View {
-    let dayInfo: DayInfo
-    let isSelected: Bool
-    
-    var body: some View {
-        VStack {
-            ZStack {
-                if isSelected {
-                    Circle()
-                        .fill(Color.blue)
-                        .frame(width: 18, height: 18)
-                }
-                
-                Text("\(dayInfo.day)")
-                    .font(.system(size: 9, weight: isSelected ? .bold : .regular))
-                    .foregroundColor(dayColor())
-                    .opacity(dayInfo.isCurrentMonth ? 1.0 : 0.4)
-            }
-        }
-        .frame(height: 18)
-    }
-    
-    private func dayColor() -> Color {
-        let calendar = Calendar.current
-        let weekday = calendar.component(.weekday, from: dayInfo.date)
-        
-        if isSelected {
-            return .white
-        } else if weekday == 1 { // Sunday
-            return .red
-        } else if weekday == 7 { // Saturday
-            return .blue
-        } else {
-            return .black
-        }
-    }
-}
+
 
 struct MonthView: View {
     let date: Date
     @Binding var selectedDate: Date
-    @Binding var memos: [String: [String]]
+    @ObservedObject var eventStore: EventStoreManager
     let isCurrentMonth: Bool
     
     private let days = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
@@ -412,11 +390,74 @@ struct MonthView: View {
     private var monthYearString: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "M월"
+        formatter.locale = Locale(identifier: "en_US")
         return formatter.string(from: date)
     }
     
     private var currentMonthDays: [DayInfo] {
         generateDaysInMonth(for: date)
+    }
+    
+    private func generateDaysInMonth(for date: Date) -> [DayInfo] {
+        var days = [DayInfo]()
+        let calendar = Calendar.current
+        let components = calendar.dateComponents([.year, .month], from: date)
+        guard let firstDayOfMonth = calendar.date(from: components) else { return [] }
+        
+        // Get the weekday of the first day of the month (1 = Sunday, 2 = Monday, etc.)
+        let firstWeekday = calendar.component(.weekday, from: firstDayOfMonth)
+        
+        // Get the number of days in the month
+        let range = calendar.range(of: .day, in: .month, for: date) ?? 1..<1
+        let numDays = range.count
+        
+        // Add padding for days from previous month
+        let prevMonth = calendar.date(byAdding: .month, value: -1, to: date)!
+        let prevMonthRange = calendar.range(of: .day, in: .month, for: prevMonth) ?? 1..<1
+        let prevMonthDays = prevMonthRange.count
+        
+        // Add previous month's days
+        let previousDaysCount = (firstWeekday - 1 + 6) % 7  // Calculate how many days from previous month to show
+        if previousDaysCount > 0 {
+            for i in 0..<previousDaysCount {
+                if let prevDate = calendar.date(byAdding: .day, value: -previousDaysCount + i, to: firstDayOfMonth) {
+                    let day = calendar.component(.day, from: prevDate)
+                    var info = DayInfo(day: day, date: prevDate, isCurrentMonth: false)
+                    info.hasEvent = !(eventStore.events[eventStore.dateKey(from: prevDate)]?.isEmpty ?? true)
+                    days.append(info)
+                }
+            }
+        }
+        
+        // Add days of the current month
+        let today = calendar.startOfDay(for: Date())
+        let selected = calendar.startOfDay(for: selectedDate)
+        
+        for day in 1...numDays {
+            let dateComponents = DateComponents(year: components.year, month: components.month, day: day)
+            if let currentDate = calendar.date(from: dateComponents) {
+                var info = DayInfo(day: day, date: currentDate, isCurrentMonth: true)
+                info.isToday = calendar.isDate(currentDate, inSameDayAs: today)
+                info.isSelected = calendar.isDate(currentDate, inSameDayAs: selected)
+                info.hasEvent = !(eventStore.events[eventStore.dateKey(from: currentDate)]?.isEmpty ?? true)
+                days.append(info)
+            }
+        }
+        
+        // Add next month's days to fill the grid (6 weeks)
+        let totalDays = 42 // 6 weeks * 7 days
+        let remaining = totalDays - days.count
+        if remaining > 0, let lastDate = days.last?.date {
+            for i in 0..<remaining {
+                if let nextDate = calendar.date(byAdding: .day, value: i + 1, to: lastDate) {
+                    var info = DayInfo(day: calendar.component(.day, from: nextDate), date: nextDate, isCurrentMonth: false)
+                    info.hasEvent = !(eventStore.events[eventStore.dateKey(from: nextDate)]?.isEmpty ?? true)
+                    days.append(info)
+                }
+            }
+        }
+        
+        return days
     }
     
     var body: some View {
@@ -457,50 +498,41 @@ struct MonthView: View {
         .shadow(radius: 1)
     }
     
-    private func generateDaysInMonth(for date: Date) -> [DayInfo] {
-        var days = [DayInfo]()
-        let calendar = Calendar.current
-        
-        let components = calendar.dateComponents([.year, .month], from: date)
-        guard let firstOfMonth = calendar.date(from: components) else { return [] }
-        
-        let firstWeekday = calendar.component(.weekday, from: firstOfMonth) - 1
-        
-        if firstWeekday > 0 {
-            for i in (0..<firstWeekday).reversed() {
-                if let prevDate = calendar.date(byAdding: .day, value: -i-1, to: firstOfMonth) {
-                    days.append(DayInfo(day: calendar.component(.day, from: prevDate), 
-                                      date: prevDate, 
-                                      isCurrentMonth: false))
-                }
-            }
-        }
-        
-        let range = calendar.range(of: .day, in: .month, for: date) ?? 1..<1
-        for day in 1...range.count {
-            if let date = calendar.date(bySetting: .day, value: day, of: firstOfMonth) {
-                days.append(DayInfo(day: day, date: date, isCurrentMonth: true))
-            }
-        }
-        
-        let totalDays = 42
-        let remaining = totalDays - days.count
-        if remaining > 0, let lastDate = days.last?.date {
-            for i in 1...remaining {
-                if let nextDate = calendar.date(byAdding: .day, value: i, to: lastDate) {
-                    days.append(DayInfo(day: calendar.component(.day, from: nextDate), 
-                                      date: nextDate, 
-                                      isCurrentMonth: false))
-                }
-            }
-        }
-        
-        return days
-    }
-    
     private func isSameDay(_ date1: Date, _ date2: Date) -> Bool {
         let calendar = Calendar.current
         return calendar.isDate(date1, inSameDayAs: date2)
+    }
+}
+
+struct DayView: View {
+    let dayInfo: DayInfo
+    let isSelected: Bool
+    
+    var body: some View {
+        ZStack {
+            if isSelected {
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 24, height: 24)
+            }
+            
+            Text("\(dayInfo.day)")
+                .font(.system(size: 12, weight: dayInfo.isToday ? .bold : .regular))
+                .foregroundColor(
+                    isSelected ? .white :
+                    dayInfo.isToday ? .blue :
+                    dayInfo.isCurrentMonth ? .black : .gray
+                )
+                .frame(width: 24, height: 24)
+            
+            if dayInfo.hasEvent {
+                Circle()
+                    .fill(Color.blue)
+                    .frame(width: 4, height: 4)
+                    .offset(y: 6)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 30)
     }
 }
 
@@ -510,31 +542,39 @@ struct MemoListView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if memos.isEmpty {
-                Text("No memos scheduled")
+                Text("No events scheduled")
                     .font(.system(size: 15))
                     .foregroundColor(.gray)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 5)
             } else {
                 ForEach(memos.prefix(2), id: \.self) { memo in
-                    HStack(spacing: 4) {
+                    HStack(spacing: 6) {
                         Circle()
                             .fill(Color.blue)
-                            .frame(width: 4, height: 4)
+                            .frame(width: 5, height: 5)
+                            .padding(.top, 6)
                         Text(memo)
-                            .font(.system(size: 15))
+                            .font(.system(size: 14))
                             .foregroundColor(.black)
                             .lineLimit(1)
+                            .minimumScaleFactor(0.8)
                         Spacer()
                     }
-                    .padding(.vertical, 1)
+                    .padding(.vertical, 2)
                 }
             }
         }
         .frame(maxWidth: .infinity)
+        .padding(.horizontal, 8)
     }
 }
 
-#Preview {
-    CalendarView()
+struct CalendarView_Previews: PreviewProvider {
+    static var previews: some View {
+        let eventStore = EventStoreManager.shared
+        return CalendarView()
+            .environment(\.locale, .init(identifier: "en_US"))
+            .environmentObject(eventStore)
+    }
 }
