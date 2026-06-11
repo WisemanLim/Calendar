@@ -2,31 +2,30 @@ import SwiftUI
 import EventKit
 
 struct CalendarView: View {
+    var theme: CalendarTheme = .default
+    @ObservedObject var settings: AppSettings
+    @ObservedObject var templateStore: TemplateStore
+
     @State private var currentDate = Date()
     @State private var selectedDate = Date()
     @StateObject private var eventStore = EventStoreManager.shared
     @State private var dragOffset: CGFloat = 0
     @State private var isDragging = false
-    
-    private let days = ["일", "월", "화", "수", "목", "금", "토"]
-    
-    private var currentMonthDays: [DayInfo] {
-        generateDaysInMonth(for: currentDate)
+    @State private var showSettings = false
+    @State private var showEditor = false
+    @State private var editingEvent: CalendarEventItem?
+
+    /// 선택일(스케줄 일자)이 오늘이 아니면 Today 버튼 노출.
+    private var showsTodayButton: Bool {
+        !Calendar.current.isDateInToday(selectedDate)
     }
-    
+
     private func yearString(date: Date) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy"
         return formatter.string(from: date)
     }
-    
-    private var monthYearString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        formatter.locale = Locale(identifier: "en_US")
-        return formatter.string(from: currentDate)
-    }
-    
+
     private var monthString: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMMM"
@@ -37,45 +36,59 @@ struct CalendarView: View {
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
-                // Current month and year header
+                // Top utility strip: settings + add
                 HStack {
-                    Text(monthString)
-                        .font(.system(size: 30, weight: .bold))
-                        .foregroundColor(.black)
+                    Button { showSettings = true } label: {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(theme.accent)
+                    }
+                    .buttonStyle(PlainButtonStyle())
                     Spacer()
-                    HStack(spacing: 15) {
-                        Button(action: {
-                            if let newDate = Calendar.current.date(byAdding: .year, value: -1, to: currentDate) {
-                                currentDate = newDate
-                            }
-                        }) {
-                            Text("<")
-                                .font(.system(size: 24, weight: .bold))
-                                .foregroundColor(.blue)
-                                .frame(width: 30, height: 30)
-                                .background(Color.blue.opacity(0.1))
-                                .cornerRadius(15)
+                    Button { showEditor = true } label: {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 24))
+                            .foregroundColor(theme.accent)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 8)
+
+                // Current month and year header
+                HStack(spacing: 10) {
+                    // Month group: < June >
+                    HStack(spacing: 4) {
+                        navButton(systemName: "chevron.left", tint: theme.month) { changeMonth(-1) }
+                        Text(monthString)
+                            .font(.system(size: 30, weight: .bold))
+                            .foregroundColor(theme.month)
+                        navButton(systemName: "chevron.right", tint: theme.month) { changeMonth(1) }
+                    }
+
+                    // Today button — only when selected date is not today
+                    if showsTodayButton {
+                        Button(action: goToToday) {
+                            Text("Today")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(theme.todayTint)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(theme.navBackground)
+                                .cornerRadius(8)
                         }
                         .buttonStyle(PlainButtonStyle())
-                        
+                    }
+
+                    Spacer()
+
+                    // Year group: < 2026 >  (nav buttons share year text color)
+                    HStack(spacing: 6) {
+                        navButton(systemName: "chevron.left", tint: theme.year) { changeYear(-1) }
                         Text(yearString(date: currentDate))
                             .font(.system(size: 24, weight: .medium))
-                            .foregroundColor(.gray)
-                            .frame(minWidth: 80)
-                        
-                        Button(action: {
-                            if let newDate = Calendar.current.date(byAdding: .year, value: 1, to: currentDate) {
-                                currentDate = newDate
-                            }
-                        }) {
-                            Text(">")
-                                .font(.system(size: 24, weight: .bold))
-                                .foregroundColor(.blue)
-                                .frame(width: 30, height: 30)
-                                .background(Color.blue.opacity(0.1))
-                                .cornerRadius(15)
-                        }
-                        .buttonStyle(PlainButtonStyle())
+                            .foregroundColor(theme.year)
+                        navButton(systemName: "chevron.right", tint: theme.year) { changeYear(1) }
                     }
                 }
                 .padding(.top, 20)
@@ -88,7 +101,7 @@ struct CalendarView: View {
                         .fill(Color.white)
                         .shadow(radius: 1)
                         .padding(.horizontal, 10)
-                        .frame(height: geometry.size.height * 0.7)
+                        .frame(height: geometry.size.height * 0.56)
                     
                     // Large background date with weekday and swipe gesture
                     ZStack {
@@ -119,13 +132,13 @@ struct CalendarView: View {
                                 .font(.system(size: min(geometry.size.width, geometry.size.height) * 0.9, weight: .bold))
                                 .minimumScaleFactor(0.5)
                                 .lineLimit(1)
-                                .foregroundColor(Color.gray.opacity(0.15))
+                                .foregroundColor(heroColor)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                                 .offset(y: 10)
 
                             Text(weekdayString(date: selectedDate).uppercased())
                                 .font(.system(size: 24, weight: .medium))
-                                .foregroundColor(Color.gray.opacity(0.15))
+                                .foregroundColor(heroColor)
                                 .minimumScaleFactor(0.5)
                                 .lineLimit(1)
                                 .offset(y: -20)
@@ -162,13 +175,27 @@ struct CalendarView: View {
                     )
                     .onAppear {
                         loadEvents(for: selectedDate)
+                        prefetchVisibleMonths()
                     }
                     .onChange(of: selectedDate) { _, newValue in
                         loadEvents(for: newValue)
+                        if !Calendar.current.isDate(newValue, equalTo: currentDate, toGranularity: .month) {
+                            currentDate = newValue
+                        }
                     }
                     .onChange(of: currentDate) { _, _ in
                         loadEvents(for: selectedDate)
+                        prefetchVisibleMonths()
                     }
+                    .onChange(of: eventStore.hasAccess) { _, authorized in
+                        if authorized { prefetchVisibleMonths() }
+                    }
+                    .simultaneousGesture(
+                        TapGesture(count: 2).onEnded { showEditor = true }
+                    )
+                    .simultaneousGesture(
+                        LongPressGesture(minimumDuration: 0.6).onEnded { _ in showEditor = true }
+                    )
                     
                     // Content layer
                     VStack(spacing: 8) {
@@ -180,36 +207,35 @@ struct CalendarView: View {
                             // Memo list
                             let memos = memosForSelectedDate()
                             if !memos.isEmpty {
-                                MemoListView(memos: Array(memos.prefix(2)))
                                 Text("SCHEDULE")
                                     .font(.system(size: 14, weight: .bold))
                                     .foregroundColor(.gray.opacity(0.8))
                                     .padding(.bottom, 5)
-                                ForEach(memos, id: \.self) { memo in
+                                ForEach(memos) { memo in
                                     HStack(alignment: .top, spacing: 10) {
                                         Circle()
-                                            .fill(Color.blue)
+                                            .fill(memo.isOverdue ? Color.red : Color.blue)
                                             .frame(width: 6, height: 6)
                                             .padding(.top, 6)
-                                        Text(memo)
+                                        Text(memo.displayTitle)
                                             .font(.system(size: 16))
-                                            .foregroundColor(.black)
+                                            .foregroundColor(memo.isOverdue ? .red : .black)
                                             .lineLimit(2)
                                         Spacer()
-                                        HStack(alignment: .top, spacing: 10) {
-                                            Circle()
-                                                .fill(Color.blue)
-                                                .frame(width: 6, height: 6)
-                                                .padding(.top, 6)
-                                            Text(memo)
-                                                .font(.system(size: 16))
-                                                .foregroundColor(.black)
-                                                .lineLimit(2)
-                                            Spacer()
+                                    }
+                                    .padding(.horizontal, 25)
+                                    .contentShape(Rectangle())
+                                    .contextMenu {
+                                        Button { editingEvent = memo } label: {
+                                            Label("편집", systemImage: "pencil")
+                                        }
+                                        Button(role: .destructive) {
+                                            eventStore.deleteEvent(id: memo.id, on: selectedDate)
+                                        } label: {
+                                            Label("삭제", systemImage: "trash")
                                         }
                                     }
                                 }
-                                .padding(.horizontal, 25)
                             } else {
                                 VStack(alignment: .leading, spacing: 12) {
                                     Text("No events scheduled")
@@ -225,118 +251,82 @@ struct CalendarView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 20)
                     }
-                    .frame(height: geometry.size.height * 0.7 - 40)
+                    .frame(height: geometry.size.height * 0.56 - 40)
                     .padding(.bottom, 40)
                 }
-                .frame(height: geometry.size.height * 0.7)
+                .frame(height: geometry.size.height * 0.56)
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 10)
-                
-                // Four month calendar grid with navigation
                 HStack(spacing: 0) {
-                    // Previous month button
-                    Button(action: { changeMonth(-1) }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.blue)
-                            .frame(width: 24, height: 24)
-                            .background(Color.blue.opacity(0.1))
-                            .cornerRadius(12)
-                            .padding(.trailing, 5)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    
-                    // Calendar grid
-                    VStack(spacing: 5) {
-                        // First row - current and next month
-                        HStack(spacing: 5) {
-                            MonthView(date: currentDate, selectedDate: $selectedDate, eventStore: eventStore, isCurrentMonth: true)
-                            MonthView(date: Calendar.current.date(byAdding: .month, value: 1, to: currentDate) ?? currentDate, selectedDate: $selectedDate, eventStore: eventStore, isCurrentMonth: false)
-                        }
-                        HStack(spacing: 5) {
-                            MonthView(date: Calendar.current.date(byAdding: .month, value: 2, to: currentDate) ?? currentDate, selectedDate: $selectedDate, eventStore: eventStore, isCurrentMonth: false)
-                            MonthView(date: Calendar.current.date(byAdding: .month, value: 3, to: currentDate) ?? currentDate, selectedDate: $selectedDate, eventStore: eventStore, isCurrentMonth: false)
-                        }
-                    }
-                    
-                    // Next month button
-                    Button(action: { changeMonth(1) }) {
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .bold))
-                            .foregroundColor(.blue)
-                            .frame(width: 24, height: 24)
-                            .background(Color.blue.opacity(0.1))
-                            .cornerRadius(12)
-                            .padding(.leading, 5)
-                    }
-                    .buttonStyle(PlainButtonStyle())
+                    MonthView(date: currentDate, selectedDate: $selectedDate, eventStore: eventStore, isCurrentMonth: true, theme: theme)
+                    Divider().frame(width: 1).padding(.vertical, 6)
+                    MonthView(date: Calendar.current.date(byAdding: .month, value: 1, to: currentDate) ?? currentDate, selectedDate: $selectedDate, eventStore: eventStore, isCurrentMonth: false, theme: theme)
                 }
-                .padding(.horizontal, 10)
-                .padding(.bottom, 10)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 8)
+                .background(Color.white)
+                .cornerRadius(16)
+                .shadow(color: Color.black.opacity(0.15), radius: 14, x: 0, y: 5)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 16)
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView(settings: settings, eventStore: eventStore)
+            }
+            .sheet(isPresented: editorSheetBinding) {
+                EventEditorView(mode: settings.plannerMode, date: selectedDate,
+                                eventStore: eventStore, templateStore: templateStore,
+                                notificationsEnabled: settings.notificationsEnabled, theme: theme)
+            }
+            .fullScreenCover(isPresented: editorFullScreenBinding) {
+                EventEditorView(mode: .diary, date: selectedDate,
+                                eventStore: eventStore, templateStore: templateStore,
+                                notificationsEnabled: settings.notificationsEnabled, theme: theme)
+            }
+            .sheet(item: $editingEvent) { event in
+                EventEditSheet(item: event, date: selectedDate, eventStore: eventStore)
             }
         }
     }
-    
-    private func isSameDay(_ date1: Date, _ date2: Date) -> Bool {
-        let calendar = Calendar.current
-        return calendar.isDate(date1, inSameDayAs: date2)
+
+    /// 다이어리 = 전체화면, 그 외 = 시트.
+    private var editorFullScreenBinding: Binding<Bool> {
+        Binding(
+            get: { showEditor && settings.plannerMode == .diary },
+            set: { if !$0 { showEditor = false } }
+        )
     }
-    
-    private func generateDaysInMonth(for date: Date) -> [DayInfo] {
-        var days = [DayInfo]()
-        let calendar = Calendar.current
-        let components = calendar.dateComponents([.year, .month], from: date)
-        guard let firstDayOfMonth = calendar.date(from: components) else { return [] }
-        let firstWeekday = calendar.component(.weekday, from: firstDayOfMonth)
-        let range = calendar.range(of: .day, in: .month, for: date) ?? 1..<1
-        let numDays = range.count
-        let prevMonth = calendar.date(byAdding: .month, value: -1, to: date)!
-        let prevMonthRange = calendar.range(of: .day, in: .month, for: prevMonth) ?? 1..<1
-        let prevMonthDays = prevMonthRange.count
-
-        for i in (firstWeekday - 2)..<0 {
-            let day = prevMonthDays + i + 1
-            if let prevDate = calendar.date(byAdding: .day, value: -i-1, to: firstDayOfMonth) {
-                days.append(DayInfo(day: day, date: prevDate, isCurrentMonth: false))
-            }
-        }
-
-        let today = calendar.startOfDay(for: Date())
-        let selected = calendar.startOfDay(for: selectedDate)
-        for day in 1...numDays {
-            let dateComponents = DateComponents(year: components.year, month: components.month, day: day)
-            if let currentDate = calendar.date(from: dateComponents) {
-                var info = DayInfo(day: day, date: currentDate, isCurrentMonth: true)
-                info.isToday = calendar.isDate(currentDate, inSameDayAs: today)
-                info.isSelected = calendar.isDate(currentDate, inSameDayAs: selected)
-                info.hasEvent = !(eventStore.events[eventStore.dateKey(from: currentDate)]?.isEmpty ?? true)
-                days.append(info)
-            }
-        }
-
-        let totalDays = 42
-        let remaining = totalDays - days.count
-        if remaining > 0, let lastDate = days.last?.date {
-            for _ in 1...remaining {
-                if let nextDate = calendar.date(byAdding: .day, value: 1, to: lastDate) {
-                    days.append(DayInfo(day: calendar.component(.day, from: nextDate), date: nextDate, isCurrentMonth: false))
-                }
-            }
-        }
-        return days
+    private var editorSheetBinding: Binding<Bool> {
+        Binding(
+            get: { showEditor && settings.plannerMode != .diary },
+            set: { if !$0 { showEditor = false } }
+        )
     }
-    
 
-    
     private func loadEvents(for date: Date) {
-        Task {
-            // This will trigger a fetch if the events aren't cached
-            _ = eventStore.fetchEvents(for: date)
+        _ = eventStore.fetchEvents(for: date)
+    }
+
+    /// 현재 표시 중인 두 달(currentDate + 다음달)을 일괄 프리패치.
+    private func prefetchVisibleMonths() {
+        let cal = Calendar.current
+        func fetch(_ date: Date) {
+            let comps = cal.dateComponents([.year, .month], from: date)
+            if let y = comps.year, let m = comps.month {
+                eventStore.fetchEventsForMonth(year: y, month: m)
+            }
         }
+        fetch(currentDate)
+        if let next = cal.date(byAdding: .month, value: 1, to: currentDate) { fetch(next) }
     }
     
-    private func memosForSelectedDate() -> [String] {
+    private func memosForSelectedDate() -> [CalendarEventItem] {
         eventStore.events[eventStore.dateKey(from: selectedDate)] ?? []
+    }
+
+    private var heroColor: Color {
+        let count = eventStore.events[eventStore.dateKey(from: selectedDate)]?.count ?? 0
+        return count > 0 ? eventCountColor(count).opacity(0.28) : Color.gray.opacity(0.15)
     }
     
     private func dayString(date: Date) -> String {
@@ -359,6 +349,33 @@ struct CalendarView: View {
             selectedDate = newDate
         }
     }
+
+    private func changeYear(_ value: Int) {
+        if let newDate = Calendar.current.date(byAdding: .year, value: value, to: currentDate) {
+            currentDate = newDate
+            selectedDate = newDate
+        }
+    }
+
+    private func goToToday() {
+        let today = Date()
+        currentDate = today
+        selectedDate = today
+    }
+
+    /// 공통 이동 버튼 (월/연 < > 에서 재사용). 색은 호출부 테마에서 주입.
+    @ViewBuilder
+    private func navButton(systemName: String, tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(tint)
+                .frame(width: 30, height: 30)
+                .background(theme.navBackground)
+                .cornerRadius(15)
+        }
+        .buttonStyle(PlainButtonStyle())
+    }
 }
 
 struct DayInfo: Identifiable {
@@ -369,11 +386,25 @@ struct DayInfo: Identifiable {
     var isToday: Bool = false
     var isSelected: Bool = false
     var hasEvent: Bool = false
-    
+    var eventCount: Int = 0
+
     init(day: Int, date: Date, isCurrentMonth: Bool) {
         self.day = day
         self.date = date
         self.isCurrentMonth = isCurrentMonth
+    }
+}
+
+/// 이벤트 갯수 → 무지개 7단계 색상 (0=기본, 1=노, 2=주, 3=초, 4=남, 5=보, 6+=빨)
+func eventCountColor(_ count: Int) -> Color {
+    switch count {
+    case 0: return .black
+    case 1: return Color(red: 0.95, green: 0.85, blue: 0.0)   // 노란색
+    case 2: return Color(red: 1.0,  green: 0.55, blue: 0.0)   // 주황색
+    case 3: return Color(red: 0.15, green: 0.72, blue: 0.25)  // 초록색
+    case 4: return Color(red: 0.08, green: 0.15, blue: 0.65)  // 남색
+    case 5: return Color(red: 0.55, green: 0.1,  blue: 0.8)   // 보라색
+    default: return Color(red: 0.85, green: 0.1, blue: 0.1)   // 빨간색 (6+)
     }
 }
 
@@ -384,7 +415,8 @@ struct MonthView: View {
     @Binding var selectedDate: Date
     @ObservedObject var eventStore: EventStoreManager
     let isCurrentMonth: Bool
-    
+    var theme: CalendarTheme = .default
+
     private let days = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
     
     private var monthYearString: String {
@@ -399,65 +431,14 @@ struct MonthView: View {
     }
     
     private func generateDaysInMonth(for date: Date) -> [DayInfo] {
-        var days = [DayInfo]()
-        let calendar = Calendar.current
-        let components = calendar.dateComponents([.year, .month], from: date)
-        guard let firstDayOfMonth = calendar.date(from: components) else { return [] }
-        
-        // Get the weekday of the first day of the month (1 = Sunday, 2 = Monday, etc.)
-        let firstWeekday = calendar.component(.weekday, from: firstDayOfMonth)
-        
-        // Get the number of days in the month
-        let range = calendar.range(of: .day, in: .month, for: date) ?? 1..<1
-        let numDays = range.count
-        
-        // Add padding for days from previous month
-        let prevMonth = calendar.date(byAdding: .month, value: -1, to: date)!
-        let prevMonthRange = calendar.range(of: .day, in: .month, for: prevMonth) ?? 1..<1
-        let prevMonthDays = prevMonthRange.count
-        
-        // Add previous month's days
-        let previousDaysCount = (firstWeekday - 1 + 6) % 7  // Calculate how many days from previous month to show
-        if previousDaysCount > 0 {
-            for i in 0..<previousDaysCount {
-                if let prevDate = calendar.date(byAdding: .day, value: -previousDaysCount + i, to: firstDayOfMonth) {
-                    let day = calendar.component(.day, from: prevDate)
-                    var info = DayInfo(day: day, date: prevDate, isCurrentMonth: false)
-                    info.hasEvent = !(eventStore.events[eventStore.dateKey(from: prevDate)]?.isEmpty ?? true)
-                    days.append(info)
-                }
+        CalendarLogic.monthGrid(
+            for: date,
+            selectedDate: selectedDate,
+            today: Date(),
+            eventCount: { d in
+                eventStore.events[eventStore.dateKey(from: d)]?.count ?? 0
             }
-        }
-        
-        // Add days of the current month
-        let today = calendar.startOfDay(for: Date())
-        let selected = calendar.startOfDay(for: selectedDate)
-        
-        for day in 1...numDays {
-            let dateComponents = DateComponents(year: components.year, month: components.month, day: day)
-            if let currentDate = calendar.date(from: dateComponents) {
-                var info = DayInfo(day: day, date: currentDate, isCurrentMonth: true)
-                info.isToday = calendar.isDate(currentDate, inSameDayAs: today)
-                info.isSelected = calendar.isDate(currentDate, inSameDayAs: selected)
-                info.hasEvent = !(eventStore.events[eventStore.dateKey(from: currentDate)]?.isEmpty ?? true)
-                days.append(info)
-            }
-        }
-        
-        // Add next month's days to fill the grid (6 weeks)
-        let totalDays = 42 // 6 weeks * 7 days
-        let remaining = totalDays - days.count
-        if remaining > 0, let lastDate = days.last?.date {
-            for i in 0..<remaining {
-                if let nextDate = calendar.date(byAdding: .day, value: i + 1, to: lastDate) {
-                    var info = DayInfo(day: calendar.component(.day, from: nextDate), date: nextDate, isCurrentMonth: false)
-                    info.hasEvent = !(eventStore.events[eventStore.dateKey(from: nextDate)]?.isEmpty ?? true)
-                    days.append(info)
-                }
-            }
-        }
-        
-        return days
+        )
     }
     
     var body: some View {
@@ -474,7 +455,7 @@ struct MonthView: View {
                     Text(day)
                         .frame(maxWidth: .infinity)
                         .font(.system(size: 8))
-                        .foregroundColor(day == "SUN" ? .red : (day == "SAT" ? .blue : .gray))
+                        .foregroundColor(day == "SUN" ? theme.sunday : (day == "SAT" ? theme.saturday : .gray))
                 }
             }
             
@@ -484,7 +465,8 @@ struct MonthView: View {
                 ForEach(currentMonthDays) { dayInfo in
                     DayView(
                         dayInfo: dayInfo,
-                        isSelected: isSameDay(dayInfo.date, selectedDate)
+                        isSelected: isSameDay(dayInfo.date, selectedDate),
+                        theme: theme
                     )
                     .onTapGesture {
                         selectedDate = dayInfo.date
@@ -493,9 +475,6 @@ struct MonthView: View {
             }
         }
         .padding(4)
-        .background(Color.white)
-        .cornerRadius(4)
-        .shadow(radius: 1)
     }
     
     private func isSameDay(_ date1: Date, _ date2: Date) -> Bool {
@@ -507,27 +486,29 @@ struct MonthView: View {
 struct DayView: View {
     let dayInfo: DayInfo
     let isSelected: Bool
-    
+    var theme: CalendarTheme = .default
+
     var body: some View {
         ZStack {
             if isSelected {
                 Circle()
-                    .fill(Color.blue)
+                    .fill(theme.accent)
                     .frame(width: 24, height: 24)
             }
-            
+
             Text("\(dayInfo.day)")
                 .font(.system(size: 12, weight: dayInfo.isToday ? .bold : .regular))
                 .foregroundColor(
                     isSelected ? .white :
-                    dayInfo.isToday ? .blue :
-                    dayInfo.isCurrentMonth ? .black : .gray
+                    !dayInfo.isCurrentMonth ? .gray :
+                    dayInfo.eventCount > 0 ? eventCountColor(dayInfo.eventCount) :
+                    dayInfo.isToday ? theme.accent : .black
                 )
                 .frame(width: 24, height: 24)
-            
+
             if dayInfo.hasEvent {
                 Circle()
-                    .fill(Color.blue)
+                    .fill(dayInfo.eventCount > 0 ? eventCountColor(dayInfo.eventCount) : theme.accent)
                     .frame(width: 4, height: 4)
                     .offset(y: 6)
             }
@@ -537,8 +518,8 @@ struct DayView: View {
 }
 
 struct MemoListView: View {
-    var memos: [String]
-    
+    var memos: [CalendarEventItem]
+
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             if memos.isEmpty {
@@ -548,15 +529,15 @@ struct MemoListView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 5)
             } else {
-                ForEach(memos.prefix(2), id: \.self) { memo in
+                ForEach(memos.prefix(2)) { memo in
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(Color.blue)
+                            .fill(memo.isOverdue ? Color.red : Color.blue)
                             .frame(width: 5, height: 5)
                             .padding(.top, 6)
-                        Text(memo)
+                        Text(memo.displayTitle)
                             .font(.system(size: 14))
-                            .foregroundColor(.black)
+                            .foregroundColor(memo.isOverdue ? .red : .black)
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
                         Spacer()
@@ -570,11 +551,79 @@ struct MemoListView: View {
     }
 }
 
+// MARK: - EventEditSheet
+
+struct EventEditSheet: View {
+    let item: CalendarEventItem
+    let date: Date
+    @ObservedObject var eventStore: EventStoreManager
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var title: String
+    @State private var notes: String
+    @State private var startTime: Date
+    @State private var endTime: Date
+    @State private var location: String
+
+    init(item: CalendarEventItem, date: Date, eventStore: EventStoreManager) {
+        self.item = item
+        self.date = date
+        self.eventStore = eventStore
+        let ek = eventStore.fetchEvent(id: item.id)
+        _title    = State(initialValue: item.title)
+        _notes    = State(initialValue: ek?.notes ?? "")
+        _startTime = State(initialValue: ek?.startDate ?? item.startDate)
+        _endTime   = State(initialValue: ek?.endDate   ?? item.startDate.addingTimeInterval(3600))
+        _location  = State(initialValue: ek?.location  ?? "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section("제목") {
+                    TextField("제목", text: $title)
+                }
+                Section("시간") {
+                    DatePicker("시작", selection: $startTime, displayedComponents: [.date, .hourAndMinute])
+                    DatePicker("종료", selection: $endTime,   displayedComponents: [.date, .hourAndMinute])
+                }
+                Section("장소") {
+                    TextField("장소 (선택)", text: $location)
+                }
+                Section("메모") {
+                    TextEditor(text: $notes)
+                        .frame(minHeight: 80)
+                }
+            }
+            .navigationTitle("일정 편집")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("저장") {
+                        let loc = location.trimmingCharacters(in: .whitespaces)
+                        eventStore.updateEvent(
+                            id: item.id,
+                            title: title,
+                            notes: notes.isEmpty ? nil : notes,
+                            startDate: startTime,
+                            endDate: endTime < startTime ? startTime : endTime,
+                            location: loc.isEmpty ? nil : loc,
+                            on: date
+                        )
+                        dismiss()
+                    }
+                    .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+}
+
 struct CalendarView_Previews: PreviewProvider {
     static var previews: some View {
-        let eventStore = EventStoreManager.shared
-        return CalendarView()
+        CalendarView(settings: AppSettings(defaults: UserDefaults(suiteName: "preview")!),
+                     templateStore: TemplateStore(defaults: UserDefaults(suiteName: "preview")!))
             .environment(\.locale, .init(identifier: "en_US"))
-            .environmentObject(eventStore)
     }
 }

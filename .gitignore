@@ -1,14 +1,40 @@
-# Xcode
-#
-# gitignore contributors: remember to update Global/Xcode.gitignore, Objective-C.gitignore & Swift.gitignore
+# ===== macOS =====
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+.fseventsd
+.AppleDouble
+.LSOverride
+Icon?
+ehthumbs.db
+Thumbs.db
+
+# ===== Xcode =====
 
 ## User settings
 xcuserdata/
+*.xcuserstate
+*.xcuserdatad/
 
-## Obj-C/Swift specific
+## Build artifacts
+build/
+DerivedData/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.xccheckout
+*.xcscmblueprint
+*.moved-aside
+
+## Obj-C / Swift
 *.hmap
-
-## App packaging
 *.ipa
 *.dSYM.zip
 *.dSYM
@@ -17,49 +43,64 @@ xcuserdata/
 timeline.xctimeline
 playground.xcworkspace
 
-# Swift Package Manager
-#
-# Add this line if you want to avoid checking in source code from Swift Package Manager dependencies.
+## Previews
+PreviewReplacement*.swift
+
+# ===== Swift Package Manager =====
+.build/
+.swiftpm/
 # Packages/
 # Package.pins
-# Package.resolved
-# *.xcodeproj
-#
-# Xcode automatically generates this directory with a .xcworkspacedata file and xcuserdata
-# hence it is not needed unless you have added a package configuration file to your project
-# .swiftpm
+# Package.resolved  ← 버전 고정 필요시 주석 해제
 
-.build/
+# ===== CocoaPods =====
+# Pods/            ← 팀 합의 후 결정
+Pods/
 
-# CocoaPods
-#
-# We recommend against adding the Pods directory to your .gitignore. However
-# you should judge for yourself, the pros and cons are mentioned at:
-# https://guides.cocoapods.org/using/using-cocoapods.html#should-i-check-the-pods-directory-into-source-control
-#
-# Pods/
-#
-# Add this line if you want to avoid checking in source code from the Xcode workspace
-# *.xcworkspace
-
-# Carthage
-#
-# Add this line if you want to avoid checking in source code from Carthage dependencies.
-# Carthage/Checkouts
-
+# ===== Carthage =====
 Carthage/Build/
+# Carthage/Checkouts  ← 필요 시 주석 해제
 
-# fastlane
-#
-# It is recommended to not store the screenshots in the git repo.
-# Instead, use fastlane to re-generate the screenshots whenever they are needed.
-# For more information about the recommended setup visit:
-# https://docs.fastlane.tools/best-practices/source-control/#source-control
-
+# ===== Fastlane =====
 fastlane/report.xml
 fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
+fastlane/.env
+fastlane/*.log
 
-# Custom
-.DS_Store
+# ===== Secrets / Certificates =====
+*.p8
+*.p12
+*.cer
+*.mobileprovision
+*.provisionprofile
+AuthKey_*.p8
+.env
+.env.*
+!.env.example
+Secrets.swift
+secrets.plist
+GoogleService-Info.plist
+
+# ===== Test / Coverage =====
+*.gcno
+*.gcda
+*.gcov
+coverage/
+*.profraw
+*.profdata
+
+# ===== Editor =====
+.vscode/
+.cursor/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===== OS / Tools =====
+*.log
+*.tmp
+.cache/
+.omc/

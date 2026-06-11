@@ -17,7 +17,7 @@ class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         // SwiftUI CalendarView를 메인으로 설정
         if let windowScene = scene as? UIWindowScene {
             let window = UIWindow(windowScene: windowScene)
-            window.rootViewController = UIHostingController(rootView: CalendarView())
+            window.rootViewController = UIHostingController(rootView: RootView())
             self.window = window
             window.makeKeyAndVisible()
         }

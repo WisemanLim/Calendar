@@ -4,6 +4,10 @@
 <dict>
 	<key>NSCalendarsUsageDescription</key>
 	<string>This app needs access to your calendar to display your events.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>카메라로 촬영한 사진을 복용 이벤트에 첨부합니다.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>앨범의 사진을 복용 이벤트에 첨부합니다.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
