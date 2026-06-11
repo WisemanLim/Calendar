@@ -224,7 +224,7 @@
 				DEVELOPMENT_TEAM = ALQEFZ23LN;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Calendar/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = WiseCalendar;
+				INFOPLIST_KEY_CFBundleDisplayName = WisemanCalendar;
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "This app needs access to your calendar to display your events.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "카메라로 촬영한 사진을 복용 이벤트에 첨부합니다.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "앨범의 사진을 복용 이벤트에 첨부합니다.";
@@ -257,7 +257,7 @@
 				DEVELOPMENT_TEAM = ALQEFZ23LN;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Calendar/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = WiseCalendar;
+				INFOPLIST_KEY_CFBundleDisplayName = WisemanCalendar;
 				INFOPLIST_KEY_NSCalendarsUsageDescription = "This app needs access to your calendar to display your events.";
 				INFOPLIST_KEY_NSCameraUsageDescription = "카메라로 촬영한 사진을 복용 이벤트에 첨부합니다.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "앨범의 사진을 복용 이벤트에 첨부합니다.";
