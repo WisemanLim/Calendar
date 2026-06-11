@@ -153,7 +153,7 @@ xcodebuild test \
 | Screen | Entry Point | Description |
 |--------|-------------|-------------|
 | `OnboardingView` | App launch (Release: first install / reinstall / version update; DEBUG: always) | 4 steps: intro+mode select → diary+todo → personal event → integration+notifications |
-| `CalendarView` | Default after onboarding | Date hero + 3-row header (util bar / month nav / week strip with weather) + 2-month mini calendar, overdue in red |
+| `CalendarView` | Default after onboarding | Date hero + 3-row header (util bar / month nav / week strip with weather + left/right swipe ±7 days) + 2-month mini calendar, overdue in red |
 | `EventEditorView` | `+` button tap | Mode-specific event input (time, location, repeat); diary pre-fills `[yyyy.MM.dd]😀수고했어요.` |
 | `SettingsView` | `⚙` button tap | Calendar integration · planner mode · notifications · color scheme (system/dark/light rolling toggle) |
 

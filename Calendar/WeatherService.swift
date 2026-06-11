@@ -86,7 +86,7 @@ enum WeatherCondition {
 // MARK: - WeatherService
 
 /// 날씨 서비스: WeatherKit(Apple) 우선, 실패 시 Open-Meteo(무료·API키 없음) 폴백.
-/// - WeatherKit 사용을 위해 Apple Developer Portal > Identifiers > WeatherKit 활성화 필요.
+/// - WeatherKit: Apple Developer Portal > Identifiers > WeatherKit 활성화 필요.
 /// - 위치 권한 거부 또는 양쪽 API 모두 실패 시 dailyWeather 빈 상태 → WeekStripView 이모지 대체.
 final class WeatherService: NSObject, ObservableObject {
     @Published var dailyWeather: [String: WeatherCondition] = [:]
@@ -106,14 +106,17 @@ final class WeatherService: NSObject, ObservableObject {
         case .notDetermined:
             locationManager.requestWhenInUseAuthorization()
         case .authorizedWhenInUse, .authorizedAlways:
-            locationManager.requestLocation()
+            locationManager.startUpdatingLocation()
         default:
-            break
+            print("[Weather] 위치 권한 거부됨 — 날씨 조회 불가")
         }
     }
 
     private func fetchWeather(lat: Double, lon: Double) {
+        guard !hasFetched else { return }
         hasFetched = true
+        locationManager.stopUpdatingLocation()
+        print("[Weather] 위치 획득 (\(String(format: "%.4f", lat)), \(String(format: "%.4f", lon))) — 날씨 조회 시작")
         Task {
             await fetchWithWeatherKit(lat: lat, lon: lon)
         }
@@ -122,6 +125,7 @@ final class WeatherService: NSObject, ObservableObject {
     // MARK: WeatherKit (primary)
 
     private func fetchWithWeatherKit(lat: Double, lon: Double) async {
+        print("[Weather] WeatherKit 조회 중...")
         let location = CLLocation(latitude: lat, longitude: lon)
         do {
             let forecast = try await WeatherKit.WeatherService.shared
@@ -132,25 +136,42 @@ final class WeatherService: NSObject, ObservableObject {
             for day in forecast.forecast {
                 result[formatter.string(from: day.date)] = .from(wkCondition: day.condition)
             }
+            print("[Weather] WeatherKit 성공: \(result.count)일")
             await MainActor.run { self.dailyWeather = result }
         } catch {
-            // WeatherKit 실패(entitlement 미설정 포함) → Open-Meteo 폴백
+            print("[Weather] WeatherKit 실패: \(error.localizedDescription) — Open-Meteo 폴백")
             fetchWithOpenMeteo(lat: lat, lon: lon)
         }
     }
 
     // MARK: Open-Meteo (fallback)
+    // 파라미터: weather_code (신규 API명칭; 구버전 weathercode도 CodingKeys로 대응)
 
     private func fetchWithOpenMeteo(lat: Double, lon: Double) {
-        let urlStr = "https://api.open-meteo.com/v1/forecast?latitude=\(lat)&longitude=\(lon)&daily=weathercode&timezone=auto&forecast_days=16&past_days=7"
+        let urlStr = "https://api.open-meteo.com/v1/forecast?latitude=\(lat)&longitude=\(lon)&daily=weather_code&timezone=auto&forecast_days=16&past_days=7"
         guard let url = URL(string: urlStr) else { return }
-        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
-            guard let self, let data,
-                  let resp = try? JSONDecoder().decode(OpenMeteoResponse.self, from: data) else { return }
-            var result: [String: WeatherCondition] = [:]
-            for (i, dateStr) in resp.daily.time.enumerated() where i < resp.daily.weathercode.count {
-                result[dateStr] = .from(wmoCode: resp.daily.weathercode[i])
+        print("[Weather] Open-Meteo 조회 중: \(urlStr)")
+        URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+            guard let self else { return }
+            if let error {
+                print("[Weather] Open-Meteo 네트워크 오류: \(error.localizedDescription)")
+                return
             }
+            guard let data else {
+                print("[Weather] Open-Meteo 응답 데이터 없음")
+                return
+            }
+            guard let resp = try? JSONDecoder().decode(OpenMeteoResponse.self, from: data) else {
+                let preview = String(data: data.prefix(300), encoding: .utf8) ?? "(non-utf8)"
+                print("[Weather] Open-Meteo 디코드 실패. 응답 미리보기: \(preview)")
+                return
+            }
+            var result: [String: WeatherCondition] = [:]
+            for (i, dateStr) in resp.daily.time.enumerated() where i < resp.daily.weatherCode.count {
+                guard let code = resp.daily.weatherCode[i] else { continue }
+                result[dateStr] = .from(wmoCode: code)
+            }
+            print("[Weather] Open-Meteo 성공: \(result.count)일")
             DispatchQueue.main.async { self.dailyWeather = result }
         }.resume()
     }
@@ -165,19 +186,25 @@ extension WeatherService: CLLocationManagerDelegate {
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         if manager.authorizationStatus == .authorizedWhenInUse ||
            manager.authorizationStatus == .authorizedAlways {
-            manager.requestLocation()
+            print("[Weather] 위치 권한 허용 — 위치 조회 시작")
+            manager.startUpdatingLocation()
         }
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
-        // 위치 실패 → dailyWeather 빈 상태, 이모지 대체
+        print("[Weather] 위치 조회 실패: \(error.localizedDescription) — 이모지 대체 표시")
     }
 }
 
 private struct OpenMeteoResponse: Decodable {
     struct Daily: Decodable {
         let time: [String]
-        let weathercode: [Int]
+        let weatherCode: [Int?]   // null 가능 (미래/과거 데이터 없음)
+
+        enum CodingKeys: String, CodingKey {
+            case time
+            case weatherCode = "weather_code"
+        }
     }
     let daily: Daily
 }

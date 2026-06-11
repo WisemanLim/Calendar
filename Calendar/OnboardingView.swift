@@ -224,7 +224,8 @@ struct OnboardingView: View {
                     emoji: "👴💊", color: Color(red: 0.95, green: 1.0, blue: 0.95),
                     title: "복용", subtitle: "아침 7시 · 점심 12시 · 저녁 18시",
                     description: "노인 또는 만성 질환 관리에 유용합니다.\n아침/점심/저녁 프리셋으로 빠르게 입력하고\n약 봉투 사진도 카메라·앨범으로 바로 첨부할 수 있습니다.",
-                    badge: "📷 사진 첨부 지원"
+                    badge: "📷 사진 첨부 지원",
+                    permissionNote: "사진 첨부 시 카메라 및 앨범(사진 보관함) 접근 권한이 필요합니다."
                 )
 
                 eventTypeCard(
@@ -372,7 +373,8 @@ struct OnboardingView: View {
     }
 
     private func eventTypeCard(emoji: String, color: Color, title: String,
-                                subtitle: String, description: String, badge: String?) -> some View {
+                                subtitle: String, description: String, badge: String?,
+                                permissionNote: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Text(emoji).font(.system(size: 28))
@@ -395,6 +397,20 @@ struct OnboardingView: View {
                 .font(.system(size: 13))
                 .foregroundColor(.secondary)
                 .lineSpacing(3)
+            if let note = permissionNote {
+                HStack(spacing: 6) {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 11))
+                        .foregroundColor(.orange)
+                    Text(note)
+                        .font(.system(size: 11))
+                        .foregroundColor(.orange)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color.orange.opacity(0.08))
+                .cornerRadius(6)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)

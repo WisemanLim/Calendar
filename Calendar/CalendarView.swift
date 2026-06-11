@@ -18,6 +18,8 @@ struct CalendarView: View {
     @State private var copyConfig: EventCopyConfig? = nil
     @State private var oneTimeModeOverride: PlannerMode? = nil
     @State private var showModeOverridePicker = false
+    @State private var showSearch = false
+    @State private var calendarSwipeOffset: CGFloat = 0
 
     private var showsTodayButton: Bool {
         !Calendar.current.isDateInToday(selectedDate)
@@ -76,6 +78,13 @@ struct CalendarView: View {
 
                     Spacer()
 
+                    Button { showSearch = true } label: {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 18, weight: .medium))
+                            .foregroundColor(theme.accent)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+
                     addButton
                 }
                 .padding(.horizontal, 20)
@@ -113,7 +122,7 @@ struct CalendarView: View {
                         .fill(Color.white)
                         .shadow(radius: 1)
                         .padding(.horizontal, 10)
-                        .frame(height: geometry.size.height * 0.43)
+                        .frame(height: geometry.size.height * 0.48)
 
                     // Animated day background
                     ZStack {
@@ -196,8 +205,13 @@ struct CalendarView: View {
 
                     // Schedule list overlay
                     VStack(spacing: 8) {
-                        Spacer().frame(height: 30)
                         VStack(spacing: 15) {
+                            // 음력 날짜 — 좌측최상단 (상단여백=좌측여백=25pt)
+                            Text(lunarDateString(for: selectedDate))
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.gray.opacity(0.5))
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.horizontal, 25)
                             let memos = memosForSelectedDate()
                             if !memos.isEmpty {
                                 Text("SCHEDULE")
@@ -235,23 +249,17 @@ struct CalendarView: View {
                                         }
                                     }
                                 }
-                            } else {
-                                Text("No events scheduled")
-                                    .font(.system(size: 16))
-                                    .foregroundColor(.gray.opacity(0.7))
-                                    .padding(.top, 20)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 25)
                             }
+                            // else { Text("No events scheduled") } // 주석 처리
                             Spacer()
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 20)
+                        .padding(.top, 25)
                     }
-                    .frame(height: geometry.size.height * 0.43 - 40)
+                    .frame(height: geometry.size.height * 0.48 - 40)
                     .padding(.bottom, 40)
                 }
-                .frame(height: geometry.size.height * 0.43)
+                .frame(height: geometry.size.height * 0.48)
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 10)
 
@@ -261,8 +269,17 @@ struct CalendarView: View {
                     Divider().frame(width: 1).padding(.vertical, 6)
                     MonthView(date: Calendar.current.date(byAdding: .month, value: 1, to: currentDate) ?? currentDate, selectedDate: $selectedDate, eventStore: eventStore, isCurrentMonth: false, theme: theme)
                 }
+                .offset(x: calendarSwipeOffset)
+                .gesture(
+                    DragGesture(minimumDistance: 20)
+                        .onChanged { v in calendarSwipeOffset = v.translation.width * 0.25 }
+                        .onEnded { v in
+                            withAnimation(.easeOut(duration: 0.15)) { calendarSwipeOffset = 0 }
+                            if v.translation.width < -50 { changeMonth(1) }
+                            else if v.translation.width > 50 { changeMonth(-1) }
+                        }
+                )
                 .padding(.horizontal, 8)
-                .padding(.vertical, 8)
                 .background(Color.white)
                 .cornerRadius(16)
                 .shadow(color: Color.black.opacity(0.15), radius: 14, x: 0, y: 5)
@@ -287,6 +304,12 @@ struct CalendarView: View {
             }
             .sheet(item: $copyConfig) { config in
                 EventCopySheet(config: config, eventStore: eventStore)
+            }
+            .sheet(isPresented: $showSearch) {
+                EventSearchView(eventStore: eventStore) { date in
+                    selectedDate = date
+                    currentDate = date
+                }
             }
             .confirmationDialog("입력 방식 선택", isPresented: $showModeOverridePicker, titleVisibility: .visible) {
                 ForEach(PlannerMode.allCases.filter { $0 != settings.plannerMode }) { mode in
@@ -361,6 +384,15 @@ struct CalendarView: View {
         return count > 0 ? eventCountColor(count).opacity(0.28) : Color.gray.opacity(0.15)
     }
 
+    private func lunarDateString(for date: Date) -> String {
+        var cal = Calendar(identifier: .chinese)
+        cal.locale = Locale(identifier: "ko_KR")
+        let comps = cal.dateComponents([.month, .day], from: date)
+        guard let month = comps.month, let day = comps.day else { return "" }
+        let leap = comps.isLeapMonth == true ? "윤" : ""
+        return "음력 \(leap)\(month)월 \(day)일"
+    }
+
     private func dayString(date: Date) -> String {
         let f = DateFormatter()
         f.dateFormat = "d"
@@ -431,6 +463,8 @@ struct WeekStripView: View {
         return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: startOfWeek) }
     }
 
+    @State private var swipeOffset: CGFloat = 0
+
     var body: some View {
         HStack(spacing: 0) {
             ForEach(weekDates, id: \.self) { date in
@@ -438,9 +472,26 @@ struct WeekStripView: View {
                     .onTapGesture { onDateTap(date) }
             }
         }
+        .offset(x: swipeOffset)
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.vertical, 8)
         .background(Color(UIColor.systemBackground))
+        .gesture(
+            DragGesture(minimumDistance: 20)
+                .onChanged { v in
+                    swipeOffset = v.translation.width * 0.25
+                }
+                .onEnded { v in
+                    let threshold: CGFloat = 50
+                    withAnimation(.easeOut(duration: 0.15)) { swipeOffset = 0 }
+                    let cal = Calendar.current
+                    if v.translation.width < -threshold {
+                        onDateTap(cal.date(byAdding: .day, value: 7, to: selectedDate) ?? selectedDate)
+                    } else if v.translation.width > threshold {
+                        onDateTap(cal.date(byAdding: .day, value: -7, to: selectedDate) ?? selectedDate)
+                    }
+                }
+        )
     }
 
     @ViewBuilder
@@ -454,10 +505,10 @@ struct WeekStripView: View {
         let condition = weatherService.dailyWeather[dateKey]
         let eventCount = eventStore.events[eventStore.dateKey(from: date)]?.count ?? 0
 
-        VStack(spacing: 3) {
+        VStack(spacing: 4) {
             // Weekday abbreviation
             Text(Self.weekdayAbbrevs[weekdayIdx])
-                .font(.system(size: 9, weight: .medium))
+                .font(.system(size: 12, weight: .medium))
                 .foregroundColor(
                     weekdayIdx == 0 ? theme.sunday :
                     weekdayIdx == 6 ? theme.saturday : .gray
@@ -466,26 +517,26 @@ struct WeekStripView: View {
             // Date circle
             ZStack {
                 if isSelected {
-                    Circle().fill(theme.accent).frame(width: 26, height: 26)
+                    Circle().fill(theme.accent).frame(width: 34, height: 34)
                 } else if isToday {
-                    Circle().stroke(theme.accent, lineWidth: 1.5).frame(width: 26, height: 26)
+                    Circle().stroke(theme.accent, lineWidth: 1.5).frame(width: 34, height: 34)
                 }
                 Text("\(dayNum)")
-                    .font(.system(size: 13, weight: isToday ? .bold : .regular))
+                    .font(.system(size: 17, weight: isToday ? .bold : .regular))
                     .foregroundColor(isSelected ? .white : isToday ? theme.accent : .primary)
             }
-            .frame(width: 26, height: 26)
+            .frame(width: 34, height: 34)
 
             // Weather icon (SF Symbol) or emoji fallback
             if let condition {
                 Image(systemName: condition.sfSymbol)
-                    .font(.system(size: 14))
+                    .font(.system(size: 18))
                     .foregroundColor(condition.tintColor)
-                    .frame(height: 18)
+                    .frame(height: 23)
             } else {
                 Text(eventDayEmoji(eventCount))
-                    .font(.system(size: 14))
-                    .frame(height: 18)
+                    .font(.system(size: 18))
+                    .frame(height: 23)
             }
         }
         .frame(maxWidth: .infinity)
@@ -565,23 +616,23 @@ struct MonthView: View {
     }
 
     var body: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 1) {
             Text(monthYearString)
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: 9, weight: .bold))
                 .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.bottom, 2)
+                .padding(.bottom, 1)
 
             HStack(spacing: 1) {
                 ForEach(days, id: \.self) { day in
                     Text(day)
                         .frame(maxWidth: .infinity)
-                        .font(.system(size: 8))
+                        .font(.system(size: 7))
                         .foregroundColor(day == "SUN" ? theme.sunday : (day == "SAT" ? theme.saturday : .gray))
                 }
             }
 
-            let columns = Array(repeating: GridItem(.flexible(), spacing: 1), count: 7)
-            LazyVGrid(columns: columns, spacing: 1) {
+            let columns = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
+            LazyVGrid(columns: columns, spacing: 0) {
                 ForEach(currentMonthDays) { dayInfo in
                     DayView(
                         dayInfo: dayInfo,
@@ -592,7 +643,7 @@ struct MonthView: View {
                 }
             }
         }
-        .padding(4)
+        .padding(.horizontal, 2)
     }
 
     private func isSameDay(_ date1: Date, _ date2: Date) -> Bool {
@@ -612,26 +663,26 @@ struct DayView: View {
             if isSelected {
                 Circle()
                     .fill(theme.accent)
-                    .frame(width: 24, height: 24)
+                    .frame(width: 20, height: 20)
             }
             Text("\(dayInfo.day)")
-                .font(.system(size: 12, weight: dayInfo.isToday ? .bold : .regular))
+                .font(.system(size: 10, weight: dayInfo.isToday ? .bold : .regular))
                 .foregroundColor(
                     isSelected ? .white :
                     !dayInfo.isCurrentMonth ? .gray :
                     dayInfo.eventCount > 0 ? eventCountColor(dayInfo.eventCount) :
                     dayInfo.isToday ? theme.accent : .black
                 )
-                .frame(width: 24, height: 24)
+                .frame(width: 20, height: 20)
 
             if dayInfo.hasEvent {
                 Circle()
                     .fill(dayInfo.eventCount > 0 ? eventCountColor(dayInfo.eventCount) : theme.accent)
-                    .frame(width: 4, height: 4)
-                    .offset(y: 6)
+                    .frame(width: 3, height: 3)
+                    .offset(y: 5)
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 30)
+        .frame(maxWidth: .infinity, minHeight: 22)
     }
 }
 
@@ -822,6 +873,73 @@ struct EventCopySheet: View {
             endDate: newEnd
         )
         dismiss()
+    }
+}
+
+// MARK: - EventSearchView
+
+struct EventSearchView: View {
+    @ObservedObject var eventStore: EventStoreManager
+    let onSelect: (Date) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var query = ""
+    @State private var results: [CalendarEventItem] = []
+
+    private static let dateFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy.MM.dd (E) HH:mm"
+        f.locale = Locale(identifier: "ko_KR")
+        return f
+    }()
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(results) { item in
+                    Button {
+                        onSelect(item.startDate)
+                        dismiss()
+                    } label: {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(item.title)
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(.primary)
+                            Text(Self.dateFmt.string(from: item.startDate))
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .overlay {
+                if results.isEmpty && !query.isEmpty {
+                    ContentUnavailableView("검색 결과 없음",
+                                          systemImage: "magnifyingglass",
+                                          description: Text("'\(query)'에 해당하는 이벤트가 없습니다."))
+                }
+            }
+            .searchable(text: $query, prompt: "이벤트 검색")
+            .onChange(of: query) { _, q in performSearch(q) }
+            .navigationTitle("이벤트 검색")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("취소") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func performSearch(_ q: String) {
+        let trimmed = q.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { results = []; return }
+        let now = Date()
+        let cal = Calendar.current
+        let start = cal.date(byAdding: .year, value: -1, to: now) ?? now
+        let end   = cal.date(byAdding: .year, value: 2,  to: now) ?? now
+        results = eventStore.searchEvents(query: trimmed, from: start, to: end)
     }
 }
 

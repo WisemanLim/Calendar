@@ -63,6 +63,11 @@ struct SettingsView: View {
                 } footer: {
                     Text("Google 캘린더는 기기 설정 → 캘린더 → 계정 추가로 연결되며, 이 앱이 자동으로 표시합니다.")
                 }
+
+                // (4) 고객지원
+                Section {
+                    NavigationLink("고객지원") { SupportView() }
+                }
             }
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

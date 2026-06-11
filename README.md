@@ -55,7 +55,7 @@ Wise-Calendar/
 | 파일 | 역할 |
 |------|------|
 | `RootView` | 온보딩 분기 (`shouldShowOnboarding` → `.fullScreenCover`) |
-| `CalendarView` | 큰 날짜 히어로(더블탭·롱프레스=이벤트 추가), 헤더, 하단 2개월 미니 달력, overdue 적색, 이벤트 수정·삭제, 무지개 색상 |
+| `CalendarView` | 큰 날짜 히어로(더블탭·롱프레스=이벤트 추가), 헤더, 주간 스트립(좌우 스와이프로 전주·다음주 이동), 하단 2개월 미니 달력, overdue 적색, 이벤트 수정·삭제, 무지개 색상 |
 | `CalendarLogic` | 그리드 42칸 생성, `dateKey(yyyy-MM-dd)`, SUN-first 정렬 |
 | `CalendarTheme` | `accent/month/year/todayTint/navBackground/sunday/saturday`; `.default` 제공 |
 | `CalendarEventItem` | 이벤트 표시용 값 타입 — `displayTitle("HH:mm 제목")`, `isOverdue`, `isTodo` |

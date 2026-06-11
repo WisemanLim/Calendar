@@ -225,6 +225,36 @@ class EventStoreManager: NSObject, ObservableObject {
         }
     }
 
+    /// 제목 또는 메모에 query를 포함하는 이벤트를 검색합니다 (startDate~endDate 범위).
+    func searchEvents(query: String, from startDate: Date, to endDate: Date) -> [CalendarEventItem] {
+        guard hasAccess, !query.isEmpty else { return [] }
+        let predicate = eventStore.predicateForEvents(withStart: startDate, end: endDate, calendars: nil)
+        let now = Date()
+        let fmt = DateFormatter()
+        fmt.dateFormat = "HH:mm"
+        let q = query.lowercased()
+        return eventStore.events(matching: predicate)
+            .filter { ev in
+                (ev.title ?? "").lowercased().contains(q) ||
+                (ev.notes ?? "").lowercased().contains(q)
+            }
+            .sorted { $0.startDate < $1.startDate }
+            .compactMap { event -> CalendarEventItem? in
+                guard let t = event.title, !t.isEmpty else { return nil }
+                let notes = event.notes ?? ""
+                let isTodo = notes.contains("- [ ]") || notes.contains("- [x]")
+                let isOverdue = isTodo && event.startDate < now && notes.contains("- [ ]")
+                return CalendarEventItem(
+                    id: event.eventIdentifier ?? UUID().uuidString,
+                    title: t,
+                    displayTitle: "\(fmt.string(from: event.startDate)) \(t)",
+                    startDate: event.startDate,
+                    isOverdue: isOverdue,
+                    isTodo: isTodo
+                )
+            }
+    }
+
     func calendarSources() -> [(id: String, title: String, source: String)] {
         guard hasAccess else { return [] }
         return eventStore.calendars(for: .event).map {
