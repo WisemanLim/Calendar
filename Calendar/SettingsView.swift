@@ -64,10 +64,30 @@ struct SettingsView: View {
                     Text("Google 캘린더는 기기 설정 → 캘린더 → 계정 추가로 연결되며, 이 앱이 자동으로 표시합니다.")
                 }
             }
-            .navigationTitle("설정")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("완료") { dismiss() } }
+                ToolbarItem(placement: .principal) {
+                    Text("설정").font(.headline)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    HStack(spacing: 16) {
+                        colorSchemeToggleButton
+                        Button("완료") { dismiss() }
+                    }
+                }
             }
+        }
+    }
+
+    private var colorSchemeToggleButton: some View {
+        Button {
+            withAnimation(.spring(duration: 0.3)) {
+                settings.appColorScheme = settings.appColorScheme.next
+            }
+        } label: {
+            Image(systemName: settings.appColorScheme.icon)
+                .font(.system(size: 20))
+                .contentTransition(.symbolEffect(.replace.byLayer.downUp))
         }
     }
 

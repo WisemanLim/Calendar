@@ -30,6 +30,8 @@ Wise-Calendar/
 │   ├── EventTemplate.swift         EventTemplate Codable + TemplateStore
 │   ├── NotificationManager.swift   UNUserNotificationCenter (9am 알림)
 │   │
+│   ├── WeatherService.swift        날씨 서비스 (WeatherKit 주 / Open-Meteo 폴백)
+│   │
 │   ├── EventEditorView.swift       모드별 이벤트 입력 UI (시간·장소·반복 설정)
 │   ├── SettingsView.swift          설정 화면 (연동 · 테마 · 알림)
 │   └── OnboardingView.swift        4단계 온보딩 TabView
@@ -58,12 +60,16 @@ Wise-Calendar/
 | `CalendarTheme` | `accent/month/year/todayTint/navBackground/sunday/saturday`; `.default` 제공 |
 | `CalendarEventItem` | 이벤트 표시용 값 타입 — `displayTitle("HH:mm 제목")`, `isOverdue`, `isTodo` |
 | `EventStoreManager` | `EKEventStore` 래퍼, `[String:[CalendarEventItem]]` 캐시, `addEvent` / `updateEvent` / `deleteEvent` / `fetchEvent` |
-| `AppSettings` | UserDefaults: `plannerMode`, `notificationsEnabled`, `onboardingCompleted`, `enabledCalendarIDs` |
+| `AppSettings` | UserDefaults: `plannerMode`, `notificationsEnabled`, `onboardingCompleted`, `enabledCalendarIDs`, `lastSeenVersion`, `appColorScheme` |
+| `AppColorScheme` | `system`/`dark`/`light` 롤링 전환 enum — `icon`(SF Symbol), `colorScheme: ColorScheme?`, `next` 프로퍼티 |
+| `WeatherService` | WeatherKit(Apple) 우선 → Open-Meteo 폴백. `dailyWeather[yyyy-MM-dd]` Published. `WeatherCondition` SF Symbol + tintColor |
+| `eventDayEmoji()` | 이벤트 갯수 → 얼굴 이모지: 0~1=😀, 2~3=😊, 4+=🤯 |
 | `PlannerMode` | `diary` · `todo` · `personalEvent` |
 | `PlannerLogic` | `dayOfYear`, `fixedTitle("[#ddd] …")`, `encodeTodos`, `decodeTodos` |
 | `EventTemplate` | `medication/appointment/fixed` 카테고리, `defaultStartHour`, `defaultDurationMinutes` |
 | `TemplateStore` | UserDefaults JSON 영속, seed 7건, `update()` |
 | `EventEditSheet` | 등록 이벤트 수정 시트 — 제목·시간·장소·메모 편집, `updateEvent` 호출 |
+| `EventCopySheet` | 이벤트 복사 시트 — DatePicker(목표 날짜) + 제목·시간·메모 미리보기, `addEvent` 호출 |
 | `eventCountColor()` | 이벤트 갯수 → 무지개 7단계: 0=기본, 1=노, 2=주, 3=초, 4=남, 5=보, 6+=빨 |
 | `MedicationPreset` | 아침(7h)/점심(12h)/저녁(18h)/직접 — 복용 시간 프리셋 |
 | `EventImageStore` | 복용 이벤트 사진 영속 — Documents JPEG + UserDefaults eventID 매핑 |
@@ -93,12 +99,58 @@ Wise-Calendar/
 **Info.plist 권한** (기 설정됨):
 - `NSCalendarsUsageDescription` — EventKit 캘린더 읽기/쓰기
 - `NSRemindersUsageDescription` — 미리 알림 접근
+- `NSLocationWhenInUseUsageDescription` — 날씨 정보용 현재 위치
+- `NSCameraUsageDescription` — 복용 이벤트 사진 첨부
+- `NSPhotoLibraryUsageDescription` — 앨범 사진 첨부
 
 **Google 캘린더 연동** (OAuth 불필요):
 1. iPhone → 설정 → 캘린더 → 계정 → 계정 추가 → Google 로그인
 2. 앱이 EventKit을 통해 자동으로 해당 캘린더 표시
 
 **알림**: 런타임에 `UNUserNotificationCenter.requestAuthorization()` 호출.
+
+---
+
+## 날씨 연동 (WeatherKit)
+
+WeatherKit(Apple)을 기본으로 사용하고, 실패 시 Open-Meteo(무료·API 키 없음)로 자동 폴백.
+
+### WeatherKit 활성화 (Apple Developer Portal 필수)
+
+1. [developer.apple.com](https://developer.apple.com) → Certificates, Identifiers & Profiles
+2. Identifiers → `com.wiseman.calendar` 선택
+3. **WeatherKit** 체크박스 활성화 → Save
+4. Xcode에서 재빌드 (entitlements 파일 `Calendar/Calendar.entitlements` 이미 포함됨)
+
+> WeatherKit이 비활성화 상태이면 앱이 자동으로 Open-Meteo로 폴백하므로 날씨 아이콘은 정상 표시됨.
+
+### WeatherKit API 사용
+
+```swift
+// WeatherService.swift
+let forecast = try await WeatherKit.WeatherService.shared
+    .weather(for: location, including: .daily)
+
+for day in forecast.forecast {
+    let condition = WeatherCondition.from(wkCondition: day.condition)
+    // condition.sfSymbol → SF Symbol 이름 (예: "sun.max.fill")
+    // condition.tintColor → SwiftUI Color
+}
+```
+
+### WeatherCondition 매핑
+
+| WeatherKit | 내부 enum | SF Symbol |
+|-----------|-----------|-----------|
+| `.clear`, `.mostlyClear` | `.clear` | `sun.max.fill` |
+| `.partlyCloudy`, `.sunShowers` | `.partlyCloudy` | `cloud.sun.fill` |
+| `.cloudy`, `.mostlyCloudy` | `.overcast` | `cloud.fill` |
+| `.foggy`, `.haze` | `.fog` | `cloud.fog.fill` |
+| `.drizzle` | `.drizzle` | `cloud.drizzle.fill` |
+| `.rain`, `.freezingRain` | `.rain` | `cloud.rain.fill` |
+| `.heavyRain` | `.heavyRain` | `cloud.heavyrain.fill` |
+| `.snow`, `.heavySnow`, `.blizzard` | `.snow` | `snowflake` |
+| `.thunderstorms`, `.strongStorms` | `.thunderstorm` | `cloud.bolt.rain.fill` |
 
 ---
 
@@ -136,10 +188,10 @@ xcodebuild test \
 
 | 화면 | 진입 방법 | 설명 |
 |------|-----------|------|
-| `OnboardingView` | 앱 시작 (Release: 최초 1회 / DEBUG: 매회) | 가이드 → 모드 선택 → Google 연동 → 알림 4단계 |
+| `OnboardingView` | 앱 시작 (Release: 최초 설치·재설치·버전 업데이트 / DEBUG: 매회) | 소개+모드선택 → 일기+할일 → 개인이벤트 → 연동+알림 4단계 |
 | `CalendarView` | 온보딩 완료 후 기본 화면 | 큰 날짜 히어로 + 헤더 + 하단 미니 달력, overdue 적색 |
 | `EventEditorView` | `+` 버튼 탭 | 모드별 이벤트 입력 (시간·장소·반복) |
-| `SettingsView` | `⚙` 버튼 탭 | 캘린더 연동 · 플래너 모드 · 알림 |
+| `SettingsView` | `⚙` 버튼 탭 | 캘린더 연동 · 플래너 모드 · 알림 · 화면 테마(system/dark/light 롤링) |
 
 ---
 

@@ -88,13 +88,22 @@ final class TemplateStore: ObservableObject {
     }
 
     /// 기본 시드 템플릿.
+    /// titleFormat 에 날짜 패턴(yyyy-mm-dd, d### 등)이 포함되면 저장 시 실제 날짜로 치환된다 (B-2).
+    /// 치환 패턴 없는 복용/약속 항목은 저장 시 자동으로 yearly RRULE이 적용된다.
     static let seed: [EventTemplate] = [
+        // 복용 — 날짜 패턴 없음 → 저장 시 auto yearly RRULE
         EventTemplate(name: "아침 복용", category: .medication, titleFormat: "아침 약 복용", defaultStartHour: 7, defaultDurationMinutes: 0),
         EventTemplate(name: "점심 복용", category: .medication, titleFormat: "점심 약 복용", defaultStartHour: 12, defaultDurationMinutes: 0),
         EventTemplate(name: "저녁 복용", category: .medication, titleFormat: "저녁 약 복용", defaultStartHour: 18, defaultDurationMinutes: 0),
+        // 복용 — d### 패턴: 저장일의 연중 일련일(3자리)로 치환, RRULE 없음
+        EventTemplate(name: "알레르기 약(일련일)", category: .medication, titleFormat: "알레르기 약 복용 (d###)", defaultStartHour: 9, defaultDurationMinutes: 0),
+        // 복용 — yyyy-mm-dd 패턴: 저장일 날짜로 치환, RRULE 없음
+        EventTemplate(name: "복용 날짜 기록", category: .medication, titleFormat: "약 복용 yyyy-mm-dd", defaultStartHour: 9, defaultDurationMinutes: 0),
+        // 약속 — 날짜 패턴 없음 → 저장 시 auto yearly RRULE
         EventTemplate(name: "연인", category: .appointment, titleFormat: "연인과 약속", defaultStartHour: 19, defaultDurationMinutes: 120),
         EventTemplate(name: "친구", category: .appointment, titleFormat: "친구와 약속", defaultStartHour: 14, defaultDurationMinutes: 120),
         EventTemplate(name: "회식", category: .appointment, titleFormat: "회식", defaultStartHour: 18, defaultDurationMinutes: 180),
-        EventTemplate(name: "알레르기 약(연간)", category: .fixed, titleFormat: "알레르기 약 복용(-/-)", dayOfYear: 162, defaultStartHour: 9, defaultDurationMinutes: 0)
+        // 고정 — 패턴 조합 예시: [정기작업] (067) 2026-03-08 형태로 치환
+        EventTemplate(name: "정기작업", category: .fixed, titleFormat: "[정기작업] (d###) yyyy-mm-dd", defaultStartHour: 9, defaultDurationMinutes: 0),
     ]
 }

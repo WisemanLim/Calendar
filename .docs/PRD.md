@@ -40,13 +40,18 @@
 
 ### 3.1 헤더/테마 UI 사양 (2026-06-11 반영, 첨부 이미지 기준)
 
-1. **Today 버튼** — 월 이름 우측. 선택일(스케줄 일자)이 당일이 아닐 때만 노출
-   (`!Calendar.isDateInToday(selectedDate)`). 탭 시 currentDate·selectedDate = 오늘.
-2. **월 이동** — 월 이름 좌우에 `<`(이전월)·`>`(다음월) 아이콘 버튼(SF Symbol chevron).
-3. **연 이동** — `<`(이전년)·`>`(다음년). 버튼 색 = 연도 숫자색과 **동일**.
-   `CalendarTheme.year` 단일 소스로 연 텍스트·연 이동 버튼 동시 적용 → 테마 교체로 확장.
-4. **하단 달력** — 현재월·다음월 2개를 좌우 배치(이미지 일치). 측면 chevron 제거(월 이동은 헤더로 이관).
-   선택/오늘/이벤트 점 = `theme.accent`, 주말 = `theme.sunday`/`theme.saturday`.
+1. **상단 유틸리티 바** (Row 1) — `⚙` (왼쪽) | `[Today]`(선택일 오늘 아닐 때) + `< 년 >` (중앙) | `＋` (오른쪽).
+2. **월 헤더** (Row 2) — `<` | `MONTH YEAR` | `>` 전체 너비. 월 이름이 한 줄에 표시됨.
+3. **주간 스트립** (Row 3) — 선택일이 포함된 주(일~토) 7셀. 각 셀: 요일 약어 + 날짜 숫자(원형 강조) + 날씨 아이콘.
+   - 날씨 아이콘: SF Symbol (`sun.max.fill` 등) + `WeatherCondition.tintColor`.
+   - 날씨 미조회 시 이모지 대체: 0~1개 이벤트 = 😀, 2~3개 = 😊, 4개 이상 = 🤯.
+   - 날씨 데이터: WeatherKit(Apple) 우선 + Open-Meteo(무료·무키) 폴백 + CoreLocation, 실패 시 이모지 자동 대체.
+4. **Today 버튼** — Row 1 중앙. 선택일이 당일 아닐 때만 노출.
+5. **연 이동** — `<`(이전년)·`>`(다음년). 버튼·숫자 색 = `CalendarTheme.year`.
+6. **월 이동** — Row 2 좌우 chevron.
+7. **하단 달력** — 현재월·다음월 2개를 좌우 배치. 선택/오늘/이벤트 점 = `theme.accent`.
+8. **＋ 버튼 길게 누르기** — `confirmationDialog`로 현재 설정 외 다른 입력 방식 목록 노출,
+   선택 시 `oneTimeModeOverride` 에 저장 → 해당 세션 1회만 적용 후 초기화.
 
 ### 3.2 설정 · 플래너 모드 · 템플릿 · 온보딩 (2026-06-11 추가 요구)
 
@@ -58,8 +63,9 @@
   *가정: 자체 Google OAuth 는 백엔드 필요 → 차후. 현 단계는 시스템 계정 경유.*
 - (2) **사용자 테마(플래너 모드)** — diary / todo / personalEvent 중 택1. 이벤트 추가 UX 결정.
 - (3) **알림** — 로컬 알림(UNUserNotificationCenter) on/off + 권한 요청/가이드.
-- 설정 영속화: `AppSettings`(UserDefaults). 필드: plannerMode, notificationsEnabled,
-  onboardingCompleted, enabledCalendarIDs.
+- (4) **화면 테마(앱 색상 모드)** — 설정 내비게이션 바 "설정" 제목과 동행. 아이콘 탭마다 system(`desktopcomputer`) → dark(`moon.fill`) → light(`sun.max.fill`) 롤링 전환. `.contentTransition(.symbolEffect)` 애니메이션 적용. `.preferredColorScheme`으로 앱 전체 반영.
+- 설정 영속화: `AppSettings`(UserDefaults). 필드: `plannerMode`, `notificationsEnabled`,
+  `onboardingCompleted`, `enabledCalendarIDs`, `lastSeenVersion`, `appColorScheme`.
 
 **(B) 플래너 모드별 이벤트 추가 UX**
 - **diary(일기)** — 추가 시 전체화면 에디터(`TextEditor`)로 확대, 자유 본문 입력 → EKEvent.notes 저장.
@@ -103,8 +109,17 @@
 - 기본 템플릿 시드 제공. 사용자 추가/편집 가능.
 
 **(D) 온보딩/인트로(`OnboardingView`)**
-- 노출 조건: 최초 실행(`!onboardingCompleted`) **또는 개발(DEBUG) 빌드에서는 매번**.
-- 단계: 사용 가이드 → 플래너 모드 선택 → Google 캘린더 연동 가이드 → 알림 권한 가이드 → 완료 시 `onboardingCompleted=true`.
+- 노출 조건: 최초 설치·재설치(`!onboardingCompleted`) **또는 버전 업데이트**(`lastSeenVersion ≠ currentBundleVersion`) **또는 DEBUG 빌드에서는 매번**.
+- 4단계:
+  1. **소개 + 모드 선택** — 앱 소개 씬 카드(웹툰 스타일) + 주요 기능 목록 + 플래너 모드 선택 버튼 + 설정 변경 안내.
+  2. **일기 + 일정관리** — 두 모드를 각각 씬 카드 + 기능 목록으로 나란히 설명.
+  3. **개인이벤트** — 복용(📷 사진 강조) · 약속 · 고정 3가지 카드.
+  4. **연동 + 알림** — Google/iCloud 연동 씬 카드 + 알림 씬 카드(허용 버튼 내장).
+  완료 시 `onboardingCompleted=true`, `lastSeenVersion=currentBundleVersion`.
+
+**(E) 이벤트 복사(`EventCopySheet`)**
+- 컨텍스트 메뉴 "복사(내용포함)" / "복사(내용제외)": 기존 이벤트를 다른 날짜로 복제.
+- `EventCopyConfig(id, item, includeNotes)` → `EventCopySheet`: 상단 DatePicker(목표 날짜) + 제목·시간·메모 미리보기 Form → 저장 시 `addEvent` 호출.
 
 ## 4. How — 접근
 
@@ -156,6 +171,16 @@
 - ~~개인이벤트 타이틀 날짜 패턴 없음~~ → `PlannerLogic.substituteTitlePatterns/hasTitleDatePattern` 추가, 저장 시 자동 치환 + 날짜 패턴 없으면 auto RRULE.
 - ~~복용 이벤트 반복 설정 없음~~ → 반복 토글 + 시작/종료일 추가.
 - ~~복용 이벤트 사진 첨부 없음~~ → `PhotosPicker`(앨범) + `CameraPicker`(카메라) + `EventImageStore`.
+- ~~월 이름 긴 경우(September 등) 여러 줄로 깨짐~~ → 헤더를 `MONTH YEAR` 단일 텍스트로 통합, `minimumScaleFactor` 적용.
+- ~~상단 헤더 레이아웃 불명확~~ → Row1(유틸) / Row2(월헤더) / Row3(주간스트립) 3단 구조로 재설계.
+- ~~주간 날씨/이벤트 현황 미표시~~ → `WeekStripView` + `WeatherService`(Open-Meteo) 추가. 날씨 미조회 시 이모지 대체.
+- ~~＋ 버튼 길게 누르기 미지원~~ → `oneTimeModeOverride` + `confirmationDialog`로 1회성 입력 방식 변경 지원.
+- ~~이벤트 복사 없음~~ → 컨텍스트 메뉴 "복사(내용포함/제외)" + `EventCopySheet` (DatePicker + 저장).
+- ~~온보딩 4단계~~ → 7단계 (다이어리·할일·개인이벤트 상세, 웹툰 일러스트레이션, 복용 사진 강조).
+- ~~버전 업데이트 시 온보딩 재노출 없음~~ → `lastSeenVersion` 추적, 업데이트·재설치 시 자동 재노출.
+- ~~diary 제목 기본값 없음~~ → 에디터 열 때 `[yyyy.MM.dd]😀수고했어요.` 자동 채움 (이벤트 수 기반 이모지).
+- ~~날씨 WeatherKit 미사용~~ → WeatherKit 우선 + Open-Meteo 폴백; entitlements 및 `NSLocationWhenInUseUsageDescription` 추가.
+- ~~테마 전환 없음~~ → `AppColorScheme`(system/dark/light) 롤링 버튼, `SettingsView` 상단 내비게이션 바에 배치, `preferredColorScheme` 앱 전체 반영.
 
 **잔여**
 - `EventStoreManager` 가 `hasAccess` 변경을 구독하지 않음 → 권한 늦은 허용 시 화면 미갱신.

@@ -9,103 +9,114 @@ struct CalendarView: View {
     @State private var currentDate = Date()
     @State private var selectedDate = Date()
     @StateObject private var eventStore = EventStoreManager.shared
+    @StateObject private var weatherService = WeatherService()
     @State private var dragOffset: CGFloat = 0
     @State private var isDragging = false
     @State private var showSettings = false
     @State private var showEditor = false
     @State private var editingEvent: CalendarEventItem?
+    @State private var copyConfig: EventCopyConfig? = nil
+    @State private var oneTimeModeOverride: PlannerMode? = nil
+    @State private var showModeOverridePicker = false
 
-    /// 선택일(스케줄 일자)이 오늘이 아니면 Today 버튼 노출.
     private var showsTodayButton: Bool {
         !Calendar.current.isDateInToday(selectedDate)
     }
 
     private func yearString(date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy"
-        return formatter.string(from: date)
+        let f = DateFormatter()
+        f.dateFormat = "yyyy"
+        return f.string(from: date)
     }
 
-    private var monthString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM"
-        formatter.locale = Locale(identifier: "en_US")
-        return formatter.string(from: currentDate)
+    private var monthYearString: String {
+        let f = DateFormatter()
+        f.dateFormat = "MMMM yyyy"
+        f.locale = Locale(identifier: "en_US")
+        return f.string(from: currentDate).uppercased()
     }
+
+    private var activeMode: PlannerMode { oneTimeModeOverride ?? settings.plannerMode }
 
     var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
-                // Top utility strip: settings + add
-                HStack {
+
+                // MARK: Row 1 — gear | Today? + < year > | +
+                HStack(spacing: 8) {
                     Button { showSettings = true } label: {
                         Image(systemName: "gearshape")
                             .font(.system(size: 18, weight: .medium))
                             .foregroundColor(theme.accent)
                     }
                     .buttonStyle(PlainButtonStyle())
+
                     Spacer()
-                    Button { showEditor = true } label: {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(theme.accent)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                }
-                .padding(.horizontal, 20)
-                .padding(.top, 8)
 
-                // Current month and year header
-                HStack(spacing: 10) {
-                    // Month group: < June >
-                    HStack(spacing: 4) {
-                        navButton(systemName: "chevron.left", tint: theme.month) { changeMonth(-1) }
-                        Text(monthString)
-                            .font(.system(size: 30, weight: .bold))
-                            .foregroundColor(theme.month)
-                        navButton(systemName: "chevron.right", tint: theme.month) { changeMonth(1) }
-                    }
-
-                    // Today button — only when selected date is not today
                     if showsTodayButton {
                         Button(action: goToToday) {
                             Text("Today")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.system(size: 14, weight: .medium))
                                 .foregroundColor(theme.todayTint)
                                 .padding(.horizontal, 10)
-                                .padding(.vertical, 5)
+                                .padding(.vertical, 4)
                                 .background(theme.navBackground)
                                 .cornerRadius(8)
                         }
                         .buttonStyle(PlainButtonStyle())
                     }
 
-                    Spacer()
-
-                    // Year group: < 2026 >  (nav buttons share year text color)
                     HStack(spacing: 6) {
                         navButton(systemName: "chevron.left", tint: theme.year) { changeYear(-1) }
                         Text(yearString(date: currentDate))
-                            .font(.system(size: 24, weight: .medium))
+                            .font(.system(size: 18, weight: .medium))
                             .foregroundColor(theme.year)
                         navButton(systemName: "chevron.right", tint: theme.year) { changeYear(1) }
                     }
+
+                    Spacer()
+
+                    addButton
                 }
-                .padding(.top, 20)
                 .padding(.horizontal, 20)
-                
-                // Selected date section with layered design
+                .padding(.top, 8)
+
+                // MARK: Row 2 — < MONTH YEAR >
+                HStack {
+                    navButton(systemName: "chevron.left", tint: theme.month) { changeMonth(-1) }
+                    Spacer()
+                    Text(monthYearString)
+                        .font(.system(size: 22, weight: .bold))
+                        .foregroundColor(theme.month)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                    Spacer()
+                    navButton(systemName: "chevron.right", tint: theme.month) { changeMonth(1) }
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+
+                // MARK: Row 3 — Week strip
+                WeekStripView(
+                    selectedDate: selectedDate,
+                    theme: theme,
+                    weatherService: weatherService,
+                    eventStore: eventStore
+                ) { date in
+                    selectedDate = date
+                }
+                .padding(.top, 6)
+
+                // MARK: Hero — large date + schedule list
                 ZStack {
-                    // White background container with thin border
                     RoundedRectangle(cornerRadius: 20)
                         .fill(Color.white)
                         .shadow(radius: 1)
                         .padding(.horizontal, 10)
-                        .frame(height: geometry.size.height * 0.56)
-                    
-                    // Large background date with weekday and swipe gesture
+                        .frame(height: geometry.size.height * 0.43)
+
+                    // Animated day background
                     ZStack {
-                        // Previous date (offscreen left)
                         if isDragging {
                             VStack(spacing: -10) {
                                 Text(dayString(date: Calendar.current.date(byAdding: .day, value: dragOffset > 0 ? -1 : 1, to: selectedDate) ?? selectedDate))
@@ -115,7 +126,6 @@ struct CalendarView: View {
                                     .foregroundColor(Color.gray.opacity(0.1))
                                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                                     .offset(y: 10)
-                                
                                 Text(weekdayString(date: Calendar.current.date(byAdding: .day, value: dragOffset > 0 ? -1 : 1, to: selectedDate) ?? selectedDate).uppercased())
                                     .font(.system(size: 24, weight: .medium))
                                     .foregroundColor(Color.gray.opacity(0.1))
@@ -125,8 +135,7 @@ struct CalendarView: View {
                             }
                             .offset(x: dragOffset > 0 ? -geometry.size.width + dragOffset : geometry.size.width + dragOffset, y: 0)
                         }
-                        
-                        // Current date
+
                         VStack(spacing: -10) {
                             Text(dayString(date: selectedDate))
                                 .font(.system(size: min(geometry.size.width, geometry.size.height) * 0.9, weight: .bold))
@@ -135,7 +144,6 @@ struct CalendarView: View {
                                 .foregroundColor(heroColor)
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                                 .offset(y: 10)
-
                             Text(weekdayString(date: selectedDate).uppercased())
                                 .font(.system(size: 24, weight: .medium))
                                 .foregroundColor(heroColor)
@@ -149,33 +157,26 @@ struct CalendarView: View {
                     .gesture(
                         DragGesture()
                             .onChanged { value in
-                                self.dragOffset = value.translation.width
-                                self.isDragging = true
+                                dragOffset = value.translation.width
+                                isDragging = true
                             }
                             .onEnded { value in
                                 withAnimation(.easeInOut(duration: 0.2)) {
-                                    // If drag distance is more than 1/4 of screen width, switch dates
                                     if abs(value.translation.width) > geometry.size.width / 4 {
-                                        if value.translation.width > 0 {
-                                            // Swipe right - go to previous day
-                                            if let newDate = Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) {
-                                                selectedDate = newDate
-                                            }
-                                        } else {
-                                            // Swipe left - go to next day
-                                            if let newDate = Calendar.current.date(byAdding: .day, value: 1, to: selectedDate) {
-                                                selectedDate = newDate
-                                            }
+                                        let delta = value.translation.width > 0 ? -1 : 1
+                                        if let newDate = Calendar.current.date(byAdding: .day, value: delta, to: selectedDate) {
+                                            selectedDate = newDate
                                         }
                                     }
-                                    self.dragOffset = 0
-                                    self.isDragging = false
+                                    dragOffset = 0
+                                    isDragging = false
                                 }
                             }
                     )
                     .onAppear {
                         loadEvents(for: selectedDate)
                         prefetchVisibleMonths()
+                        weatherService.requestLocationAndFetch()
                     }
                     .onChange(of: selectedDate) { _, newValue in
                         loadEvents(for: newValue)
@@ -190,21 +191,13 @@ struct CalendarView: View {
                     .onChange(of: eventStore.hasAccess) { _, authorized in
                         if authorized { prefetchVisibleMonths() }
                     }
-                    .simultaneousGesture(
-                        TapGesture(count: 2).onEnded { showEditor = true }
-                    )
-                    .simultaneousGesture(
-                        LongPressGesture(minimumDuration: 0.6).onEnded { _ in showEditor = true }
-                    )
-                    
-                    // Content layer
+                    .simultaneousGesture(TapGesture(count: 2).onEnded { showEditor = true })
+                    .simultaneousGesture(LongPressGesture(minimumDuration: 0.6).onEnded { _ in showEditor = true })
+
+                    // Schedule list overlay
                     VStack(spacing: 8) {
-                        Spacer()
-                            .frame(height: 30)
-                        
-                        // Main content area
+                        Spacer().frame(height: 30)
                         VStack(spacing: 15) {
-                            // Memo list
                             let memos = memosForSelectedDate()
                             if !memos.isEmpty {
                                 Text("SCHEDULE")
@@ -229,6 +222,12 @@ struct CalendarView: View {
                                         Button { editingEvent = memo } label: {
                                             Label("편집", systemImage: "pencil")
                                         }
+                                        Button { copyConfig = EventCopyConfig(item: memo, includeNotes: true) } label: {
+                                            Label("복사 (내용포함)", systemImage: "doc.on.doc")
+                                        }
+                                        Button { copyConfig = EventCopyConfig(item: memo, includeNotes: false) } label: {
+                                            Label("복사 (내용제외)", systemImage: "doc.on.doc.fill")
+                                        }
                                         Button(role: .destructive) {
                                             eventStore.deleteEvent(id: memo.id, on: selectedDate)
                                         } label: {
@@ -237,26 +236,26 @@ struct CalendarView: View {
                                     }
                                 }
                             } else {
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text("No events scheduled")
-                                        .font(.system(size: 16))
-                                        .foregroundColor(.gray.opacity(0.7))
-                                        .padding(.top, 20)
-                                }
-                                .padding(.horizontal, 25)
+                                Text("No events scheduled")
+                                    .font(.system(size: 16))
+                                    .foregroundColor(.gray.opacity(0.7))
+                                    .padding(.top, 20)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.horizontal, 25)
                             }
-                            
                             Spacer()
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 20)
                     }
-                    .frame(height: geometry.size.height * 0.56 - 40)
+                    .frame(height: geometry.size.height * 0.43 - 40)
                     .padding(.bottom, 40)
                 }
-                .frame(height: geometry.size.height * 0.56)
+                .frame(height: geometry.size.height * 0.43)
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 10)
+
+                // MARK: Mini calendars — current + next month
                 HStack(spacing: 0) {
                     MonthView(date: currentDate, selectedDate: $selectedDate, eventStore: eventStore, isCurrentMonth: true, theme: theme)
                     Divider().frame(width: 1).padding(.vertical, 6)
@@ -274,40 +273,73 @@ struct CalendarView: View {
                 SettingsView(settings: settings, eventStore: eventStore)
             }
             .sheet(isPresented: editorSheetBinding) {
-                EventEditorView(mode: settings.plannerMode, date: selectedDate,
+                EventEditorView(mode: activeMode, date: selectedDate,
                                 eventStore: eventStore, templateStore: templateStore,
                                 notificationsEnabled: settings.notificationsEnabled, theme: theme)
             }
             .fullScreenCover(isPresented: editorFullScreenBinding) {
-                EventEditorView(mode: .diary, date: selectedDate,
+                EventEditorView(mode: activeMode, date: selectedDate,
                                 eventStore: eventStore, templateStore: templateStore,
                                 notificationsEnabled: settings.notificationsEnabled, theme: theme)
             }
             .sheet(item: $editingEvent) { event in
                 EventEditSheet(item: event, date: selectedDate, eventStore: eventStore)
             }
+            .sheet(item: $copyConfig) { config in
+                EventCopySheet(config: config, eventStore: eventStore)
+            }
+            .confirmationDialog("입력 방식 선택", isPresented: $showModeOverridePicker, titleVisibility: .visible) {
+                ForEach(PlannerMode.allCases.filter { $0 != settings.plannerMode }) { mode in
+                    Button(mode.title) {
+                        oneTimeModeOverride = mode
+                        showEditor = true
+                    }
+                }
+                Button("취소", role: .cancel) {}
+            } message: {
+                Text("이번 1회만 다른 입력 방식으로 이벤트를 추가합니다.")
+            }
         }
     }
 
-    /// 다이어리 = 전체화면, 그 외 = 시트.
+    // MARK: - Add button (tap = default mode, long press = one-time override)
+
+    private var addButton: some View {
+        Button { showEditor = true } label: {
+            Image(systemName: "plus.circle.fill")
+                .font(.system(size: 24))
+                .foregroundColor(theme.accent)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .simultaneousGesture(
+            LongPressGesture(minimumDuration: 0.6).onEnded { _ in
+                showModeOverridePicker = true
+            }
+        )
+    }
+
+    // MARK: - Sheet bindings
+
     private var editorFullScreenBinding: Binding<Bool> {
         Binding(
-            get: { showEditor && settings.plannerMode == .diary },
-            set: { if !$0 { showEditor = false } }
+            get: { showEditor && activeMode == .diary },
+            set: { if !$0 { showEditor = false; oneTimeModeOverride = nil } }
         )
     }
+
     private var editorSheetBinding: Binding<Bool> {
         Binding(
-            get: { showEditor && settings.plannerMode != .diary },
-            set: { if !$0 { showEditor = false } }
+            get: { showEditor && activeMode != .diary },
+            set: { if !$0 { showEditor = false; oneTimeModeOverride = nil } }
         )
     }
+
+    // MARK: - Helpers
 
     private func loadEvents(for date: Date) {
         _ = eventStore.fetchEvents(for: date)
     }
 
-    /// 현재 표시 중인 두 달(currentDate + 다음달)을 일괄 프리패치.
     private func prefetchVisibleMonths() {
         let cal = Calendar.current
         func fetch(_ date: Date) {
@@ -319,7 +351,7 @@ struct CalendarView: View {
         fetch(currentDate)
         if let next = cal.date(byAdding: .month, value: 1, to: currentDate) { fetch(next) }
     }
-    
+
     private func memosForSelectedDate() -> [CalendarEventItem] {
         eventStore.events[eventStore.dateKey(from: selectedDate)] ?? []
     }
@@ -328,24 +360,23 @@ struct CalendarView: View {
         let count = eventStore.events[eventStore.dateKey(from: selectedDate)]?.count ?? 0
         return count > 0 ? eventCountColor(count).opacity(0.28) : Color.gray.opacity(0.15)
     }
-    
+
     private func dayString(date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "d"
-        return formatter.string(from: date)
+        let f = DateFormatter()
+        f.dateFormat = "d"
+        return f.string(from: date)
     }
-    
+
     private func weekdayString(date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE"
-        formatter.locale = Locale(identifier: "en_US")
-        return formatter.string(from: date)
+        let f = DateFormatter()
+        f.dateFormat = "EEEE"
+        f.locale = Locale(identifier: "en_US")
+        return f.string(from: date)
     }
-    
+
     private func changeMonth(_ value: Int) {
         if let newDate = Calendar.current.date(byAdding: .month, value: value, to: currentDate) {
             currentDate = newDate
-            // Auto-select first day of the month when changing months
             selectedDate = newDate
         }
     }
@@ -363,7 +394,6 @@ struct CalendarView: View {
         selectedDate = today
     }
 
-    /// 공통 이동 버튼 (월/연 < > 에서 재사용). 색은 호출부 테마에서 주입.
     @ViewBuilder
     private func navButton(systemName: String, tint: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
@@ -377,6 +407,94 @@ struct CalendarView: View {
         .buttonStyle(PlainButtonStyle())
     }
 }
+
+// MARK: - WeekStripView
+
+struct WeekStripView: View {
+    let selectedDate: Date
+    let theme: CalendarTheme
+    @ObservedObject var weatherService: WeatherService
+    @ObservedObject var eventStore: EventStoreManager
+    let onDateTap: (Date) -> Void
+
+    private static let weekdayAbbrevs = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
+    private static let dateKeyFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    private var weekDates: [Date] {
+        let cal = Calendar.current
+        let weekday = cal.component(.weekday, from: selectedDate) // 1=Sun
+        guard let startOfWeek = cal.date(byAdding: .day, value: -(weekday - 1), to: selectedDate) else { return [] }
+        return (0..<7).compactMap { cal.date(byAdding: .day, value: $0, to: startOfWeek) }
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(weekDates, id: \.self) { date in
+                dayCell(for: date)
+                    .onTapGesture { onDateTap(date) }
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Color(UIColor.systemBackground))
+    }
+
+    @ViewBuilder
+    private func dayCell(for date: Date) -> some View {
+        let cal = Calendar.current
+        let isSelected = cal.isDate(date, inSameDayAs: selectedDate)
+        let isToday = cal.isDateInToday(date)
+        let weekdayIdx = cal.component(.weekday, from: date) - 1   // 0=Sun
+        let dayNum = cal.component(.day, from: date)
+        let dateKey = Self.dateKeyFormatter.string(from: date)
+        let condition = weatherService.dailyWeather[dateKey]
+        let eventCount = eventStore.events[eventStore.dateKey(from: date)]?.count ?? 0
+
+        VStack(spacing: 3) {
+            // Weekday abbreviation
+            Text(Self.weekdayAbbrevs[weekdayIdx])
+                .font(.system(size: 9, weight: .medium))
+                .foregroundColor(
+                    weekdayIdx == 0 ? theme.sunday :
+                    weekdayIdx == 6 ? theme.saturday : .gray
+                )
+
+            // Date circle
+            ZStack {
+                if isSelected {
+                    Circle().fill(theme.accent).frame(width: 26, height: 26)
+                } else if isToday {
+                    Circle().stroke(theme.accent, lineWidth: 1.5).frame(width: 26, height: 26)
+                }
+                Text("\(dayNum)")
+                    .font(.system(size: 13, weight: isToday ? .bold : .regular))
+                    .foregroundColor(isSelected ? .white : isToday ? theme.accent : .primary)
+            }
+            .frame(width: 26, height: 26)
+
+            // Weather icon (SF Symbol) or emoji fallback
+            if let condition {
+                Image(systemName: condition.sfSymbol)
+                    .font(.system(size: 14))
+                    .foregroundColor(condition.tintColor)
+                    .frame(height: 18)
+            } else {
+                Text(eventDayEmoji(eventCount))
+                    .font(.system(size: 14))
+                    .frame(height: 18)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .contentShape(Rectangle())
+    }
+
+}
+
+// MARK: - DayInfo
 
 struct DayInfo: Identifiable {
     let id = UUID()
@@ -395,20 +513,29 @@ struct DayInfo: Identifiable {
     }
 }
 
+/// 이벤트 갯수 → 얼굴 이모지 (0~1=😀, 2~3=😊, 4+=🤯)
+func eventDayEmoji(_ count: Int) -> String {
+    switch count {
+    case 0, 1: return "😀"
+    case 2, 3: return "😊"
+    default:   return "🤯"
+    }
+}
+
 /// 이벤트 갯수 → 무지개 7단계 색상 (0=기본, 1=노, 2=주, 3=초, 4=남, 5=보, 6+=빨)
 func eventCountColor(_ count: Int) -> Color {
     switch count {
     case 0: return .black
-    case 1: return Color(red: 0.95, green: 0.85, blue: 0.0)   // 노란색
-    case 2: return Color(red: 1.0,  green: 0.55, blue: 0.0)   // 주황색
-    case 3: return Color(red: 0.15, green: 0.72, blue: 0.25)  // 초록색
-    case 4: return Color(red: 0.08, green: 0.15, blue: 0.65)  // 남색
-    case 5: return Color(red: 0.55, green: 0.1,  blue: 0.8)   // 보라색
-    default: return Color(red: 0.85, green: 0.1, blue: 0.1)   // 빨간색 (6+)
+    case 1: return Color(red: 0.95, green: 0.85, blue: 0.0)
+    case 2: return Color(red: 1.0,  green: 0.55, blue: 0.0)
+    case 3: return Color(red: 0.15, green: 0.72, blue: 0.25)
+    case 4: return Color(red: 0.08, green: 0.15, blue: 0.65)
+    case 5: return Color(red: 0.55, green: 0.1,  blue: 0.8)
+    default: return Color(red: 0.85, green: 0.1, blue: 0.1)
     }
 }
 
-
+// MARK: - MonthView
 
 struct MonthView: View {
     let date: Date
@@ -418,19 +545,15 @@ struct MonthView: View {
     var theme: CalendarTheme = .default
 
     private let days = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
-    
+
     private var monthYearString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "M월"
-        formatter.locale = Locale(identifier: "en_US")
-        return formatter.string(from: date)
+        let f = DateFormatter()
+        f.dateFormat = "M월"
+        f.locale = Locale(identifier: "en_US")
+        return f.string(from: date)
     }
-    
+
     private var currentMonthDays: [DayInfo] {
-        generateDaysInMonth(for: date)
-    }
-    
-    private func generateDaysInMonth(for date: Date) -> [DayInfo] {
         CalendarLogic.monthGrid(
             for: date,
             selectedDate: selectedDate,
@@ -440,16 +563,14 @@ struct MonthView: View {
             }
         )
     }
-    
+
     var body: some View {
         VStack(spacing: 2) {
-            // Month header
             Text(monthYearString)
                 .font(.system(size: 10, weight: .bold))
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.bottom, 2)
-            
-            // Weekday header
+
             HStack(spacing: 1) {
                 ForEach(days, id: \.self) { day in
                     Text(day)
@@ -458,8 +579,7 @@ struct MonthView: View {
                         .foregroundColor(day == "SUN" ? theme.sunday : (day == "SAT" ? theme.saturday : .gray))
                 }
             }
-            
-            // Date grid
+
             let columns = Array(repeating: GridItem(.flexible(), spacing: 1), count: 7)
             LazyVGrid(columns: columns, spacing: 1) {
                 ForEach(currentMonthDays) { dayInfo in
@@ -468,20 +588,19 @@ struct MonthView: View {
                         isSelected: isSameDay(dayInfo.date, selectedDate),
                         theme: theme
                     )
-                    .onTapGesture {
-                        selectedDate = dayInfo.date
-                    }
+                    .onTapGesture { selectedDate = dayInfo.date }
                 }
             }
         }
         .padding(4)
     }
-    
+
     private func isSameDay(_ date1: Date, _ date2: Date) -> Bool {
-        let calendar = Calendar.current
-        return calendar.isDate(date1, inSameDayAs: date2)
+        Calendar.current.isDate(date1, inSameDayAs: date2)
     }
 }
+
+// MARK: - DayView
 
 struct DayView: View {
     let dayInfo: DayInfo
@@ -495,7 +614,6 @@ struct DayView: View {
                     .fill(theme.accent)
                     .frame(width: 24, height: 24)
             }
-
             Text("\(dayInfo.day)")
                 .font(.system(size: 12, weight: dayInfo.isToday ? .bold : .regular))
                 .foregroundColor(
@@ -516,6 +634,8 @@ struct DayView: View {
         .frame(maxWidth: .infinity, minHeight: 30)
     }
 }
+
+// MARK: - MemoListView
 
 struct MemoListView: View {
     var memos: [CalendarEventItem]
@@ -570,8 +690,8 @@ struct EventEditSheet: View {
         self.date = date
         self.eventStore = eventStore
         let ek = eventStore.fetchEvent(id: item.id)
-        _title    = State(initialValue: item.title)
-        _notes    = State(initialValue: ek?.notes ?? "")
+        _title     = State(initialValue: item.title)
+        _notes     = State(initialValue: ek?.notes ?? "")
         _startTime = State(initialValue: ek?.startDate ?? item.startDate)
         _endTime   = State(initialValue: ek?.endDate   ?? item.startDate.addingTimeInterval(3600))
         _location  = State(initialValue: ek?.location  ?? "")
@@ -580,19 +700,14 @@ struct EventEditSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("제목") {
-                    TextField("제목", text: $title)
-                }
+                Section("제목") { TextField("제목", text: $title) }
                 Section("시간") {
                     DatePicker("시작", selection: $startTime, displayedComponents: [.date, .hourAndMinute])
                     DatePicker("종료", selection: $endTime,   displayedComponents: [.date, .hourAndMinute])
                 }
-                Section("장소") {
-                    TextField("장소 (선택)", text: $location)
-                }
+                Section("장소") { TextField("장소 (선택)", text: $location) }
                 Section("메모") {
-                    TextEditor(text: $notes)
-                        .frame(minHeight: 80)
+                    TextEditor(text: $notes).frame(minHeight: 80)
                 }
             }
             .navigationTitle("일정 편집")
@@ -603,8 +718,7 @@ struct EventEditSheet: View {
                     Button("저장") {
                         let loc = location.trimmingCharacters(in: .whitespaces)
                         eventStore.updateEvent(
-                            id: item.id,
-                            title: title,
+                            id: item.id, title: title,
                             notes: notes.isEmpty ? nil : notes,
                             startDate: startTime,
                             endDate: endTime < startTime ? startTime : endTime,
@@ -619,6 +733,99 @@ struct EventEditSheet: View {
         }
     }
 }
+
+// MARK: - EventCopyConfig
+
+struct EventCopyConfig: Identifiable {
+    let id = UUID()
+    let item: CalendarEventItem
+    let includeNotes: Bool
+}
+
+// MARK: - EventCopySheet
+
+struct EventCopySheet: View {
+    let config: EventCopyConfig
+    @ObservedObject var eventStore: EventStoreManager
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var targetDate: Date
+    @State private var title: String
+    @State private var notes: String
+    @State private var startHour: Date
+    @State private var endHour: Date
+
+    init(config: EventCopyConfig, eventStore: EventStoreManager) {
+        self.config = config
+        self.eventStore = eventStore
+        let ek = eventStore.fetchEvent(id: config.item.id)
+        _targetDate = State(initialValue: Date())
+        _title      = State(initialValue: config.item.title)
+        _notes      = State(initialValue: config.includeNotes ? (ek?.notes ?? "") : "")
+        _startHour  = State(initialValue: ek?.startDate ?? config.item.startDate)
+        _endHour    = State(initialValue: ek?.endDate   ?? config.item.startDate.addingTimeInterval(3600))
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    DatePicker("복사 날짜", selection: $targetDate, displayedComponents: .date)
+                } header: {
+                    Text("복사할 날짜 선택")
+                }
+
+                Section("제목") {
+                    TextField("제목", text: $title)
+                }
+
+                Section("시간") {
+                    DatePicker("시작", selection: $startHour, displayedComponents: .hourAndMinute)
+                    DatePicker("종료", selection: $endHour,   displayedComponents: .hourAndMinute)
+                }
+
+                if config.includeNotes {
+                    Section("내용") {
+                        TextEditor(text: $notes).frame(minHeight: 80)
+                    }
+                }
+            }
+            .navigationTitle("이벤트 복사")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("복사", action: save)
+                        .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        let cal = Calendar.current
+        func combine(date: Date, time: Date) -> Date {
+            let d = cal.dateComponents([.year, .month, .day], from: date)
+            let t = cal.dateComponents([.hour, .minute], from: time)
+            var merged = DateComponents()
+            merged.year = d.year; merged.month = d.month; merged.day = d.day
+            merged.hour = t.hour; merged.minute = t.minute
+            return cal.date(from: merged) ?? date
+        }
+        let newStart = combine(date: targetDate, time: startHour)
+        let rawEnd   = combine(date: targetDate, time: endHour)
+        let newEnd   = rawEnd <= newStart ? newStart.addingTimeInterval(3600) : rawEnd
+        _ = eventStore.addEvent(
+            title: title,
+            notes: config.includeNotes && !notes.isEmpty ? notes : nil,
+            startDate: newStart,
+            endDate: newEnd
+        )
+        dismiss()
+    }
+}
+
+// MARK: - Preview
 
 struct CalendarView_Previews: PreviewProvider {
     static var previews: some View {

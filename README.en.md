@@ -2,7 +2,7 @@
 
 [한국어](README.md) | English
 
-A personal iOS calendar + planner app. Large date display for intuitive scheduling, with three planner modes: diary, to-do, and personal event.
+A personal iOS calendar + planner app. Large date display for intuitive scheduling, with three planner modes: diary, to-do, and personal event. Includes weather integration (WeatherKit + Open-Meteo fallback), event copy, and a rolling system/dark/light theme toggle.
 
 - **Profile**: ios-swiftui
 - **Domain**: ict-saas (consumer, serverless)
@@ -30,8 +30,10 @@ Wise-Calendar/
 │   ├── EventTemplate.swift         EventTemplate Codable + TemplateStore
 │   ├── NotificationManager.swift   UNUserNotificationCenter (9am reminders)
 │   │
+│   ├── WeatherService.swift        Weather (WeatherKit primary / Open-Meteo fallback)
+│   │
 │   ├── EventEditorView.swift       Mode-specific event input UI (time, location, repeat)
-│   ├── SettingsView.swift          Settings (integration · theme · notifications)
+│   ├── SettingsView.swift          Settings (integration · theme · notifications · color scheme)
 │   └── OnboardingView.swift        4-step onboarding TabView
 │
 ├── Calendar/Assets.xcassets/
@@ -58,12 +60,16 @@ Wise-Calendar/
 | `CalendarTheme` | `accent/month/year/todayTint/navBackground/sunday/saturday`; `.default` preset |
 | `CalendarEventItem` | Display value type — `displayTitle("HH:mm title")`, `isOverdue`, `isTodo` |
 | `EventStoreManager` | `EKEventStore` wrapper, `[String:[CalendarEventItem]]` cache, `addEvent` / `updateEvent` / `deleteEvent` / `fetchEvent` |
-| `AppSettings` | UserDefaults: `plannerMode`, `notificationsEnabled`, `onboardingCompleted`, `enabledCalendarIDs` |
+| `AppSettings` | UserDefaults: `plannerMode`, `notificationsEnabled`, `onboardingCompleted`, `enabledCalendarIDs`, `lastSeenVersion`, `appColorScheme` |
+| `AppColorScheme` | Rolling color scheme enum — `system`/`dark`/`light`; `icon` (SF Symbol), `colorScheme: ColorScheme?`, `next` cycling property |
+| `WeatherService` | WeatherKit (primary) → Open-Meteo fallback. `dailyWeather[yyyy-MM-dd]` Published. `WeatherCondition` with SF Symbol + tintColor |
+| `eventDayEmoji()` | Event count → face emoji: 0–1=😀, 2–3=😊, 4+=🤯 (WeekStrip fallback when no weather) |
 | `PlannerMode` | `diary` · `todo` · `personalEvent` |
 | `PlannerLogic` | `dayOfYear`, `fixedTitle("[#ddd] …")`, `encodeTodos`, `decodeTodos` |
 | `EventTemplate` | `medication/appointment/fixed` categories, `defaultStartHour`, `defaultDurationMinutes` |
 | `TemplateStore` | UserDefaults JSON persistence, 7 seed templates, `update()` |
 | `EventEditSheet` | Edit sheet for registered events — title, time, location, notes, calls `updateEvent` |
+| `EventCopySheet` | Copy-event sheet — DatePicker (target date) + title/time/notes preview form, calls `addEvent` |
 | `eventCountColor()` | Event count → 7-level rainbow: 0=default, 1=yellow, 2=orange, 3=green, 4=navy, 5=purple, 6+=red |
 | `MedicationPreset` | Morning(7h)/Lunch(12h)/Evening(18h)/Custom — medication time presets |
 | `EventImageStore` | Photo persistence for medication events — Documents JPEG + UserDefaults eventID map |
@@ -93,6 +99,16 @@ Serverless app — no `.env` files or API keys required.
 **Info.plist permissions** (pre-configured):
 - `NSCalendarsUsageDescription` — EventKit calendar read/write
 - `NSRemindersUsageDescription` — Reminders access
+- `NSLocationWhenInUseUsageDescription` — Current location for weather data
+- `NSCameraUsageDescription` — Photo attachment for medication events
+- `NSPhotoLibraryUsageDescription` — Album photo attachment
+
+**WeatherKit** (Apple Developer Portal required):
+1. [developer.apple.com](https://developer.apple.com) → Certificates, Identifiers & Profiles
+2. Identifiers → `com.wiseman.calendar` → enable **WeatherKit** checkbox → Save
+3. Rebuild in Xcode (`Calendar/Calendar.entitlements` already included)
+
+> If WeatherKit is not activated, the app automatically falls back to Open-Meteo (no API key needed) — weather icons still display normally.
 
 **Google Calendar integration** (no OAuth required):
 1. iPhone → Settings → Calendar → Accounts → Add Account → Google
@@ -136,10 +152,10 @@ xcodebuild test \
 
 | Screen | Entry Point | Description |
 |--------|-------------|-------------|
-| `OnboardingView` | App launch (Release: once / DEBUG: always) | Guide → mode select → Google → notifications |
-| `CalendarView` | Default after onboarding | Date hero + header + mini calendar, overdue in red |
-| `EventEditorView` | `+` button tap | Mode-specific event input (time, location, repeat) |
-| `SettingsView` | `⚙` button tap | Calendar integration · planner mode · notifications |
+| `OnboardingView` | App launch (Release: first install / reinstall / version update; DEBUG: always) | 4 steps: intro+mode select → diary+todo → personal event → integration+notifications |
+| `CalendarView` | Default after onboarding | Date hero + 3-row header (util bar / month nav / week strip with weather) + 2-month mini calendar, overdue in red |
+| `EventEditorView` | `+` button tap | Mode-specific event input (time, location, repeat); diary pre-fills `[yyyy.MM.dd]😀수고했어요.` |
+| `SettingsView` | `⚙` button tap | Calendar integration · planner mode · notifications · color scheme (system/dark/light rolling toggle) |
 
 ---
 
@@ -194,6 +210,40 @@ NotificationManager.shared.scheduleEventReminder(title: "Meeting", on: date)
 // UNCalendarNotificationTrigger: 09:00 on the specified date
 ```
 
+### Event copy (context menu)
+
+Long-press any event in the schedule list to see "Copy (with notes)" / "Copy (without notes)".
+`EventCopySheet` opens with a DatePicker to pick the target date; tapping Save calls `addEvent`.
+
+### Diary default title
+
+When opening the diary editor, the title is pre-filled based on the current event count for that day:
+
+```
+[2026.06.11]😀수고했어요.   (0–1 events)
+[2026.06.11]😊수고했어요.   (2–3 events)
+[2026.06.11]🤯수고했어요.   (4+ events)
+```
+
+### Color scheme toggle
+
+Tap the icon in the Settings navigation bar to cycle: **system** (`desktopcomputer`) → **dark** (`moon.fill`) → **light** (`sun.max.fill`).
+Persisted to UserDefaults via `AppSettings.appColorScheme`. Applied app-wide via `.preferredColorScheme()` in `RootView`.
+
+### WeatherKit condition mapping
+
+| WeatherKit | Internal enum | SF Symbol |
+|-----------|---------------|-----------|
+| `.clear`, `.mostlyClear` | `.clear` | `sun.max.fill` |
+| `.partlyCloudy`, `.sunShowers` | `.partlyCloudy` | `cloud.sun.fill` |
+| `.cloudy`, `.mostlyCloudy` | `.overcast` | `cloud.fill` |
+| `.foggy`, `.haze` | `.fog` | `cloud.fog.fill` |
+| `.drizzle` | `.drizzle` | `cloud.drizzle.fill` |
+| `.rain`, `.freezingRain` | `.rain` | `cloud.rain.fill` |
+| `.heavyRain` | `.heavyRain` | `cloud.heavyrain.fill` |
+| `.snow`, `.heavySnow`, `.blizzard` | `.snow` | `snowflake` |
+| `.thunderstorms`, `.strongStorms` | `.thunderstorm` | `cloud.bolt.rain.fill` |
+
 ---
 
 ## App Icon
@@ -223,6 +273,8 @@ xcodebuild test \
 | `CalendarLogicTests` | 9 | dateKey format, 42-cell grid, SUN-first alignment, event injection |
 | `PlannerLogicTests` | 20 | dayOfYear ×5, fixedTitle ×4, encodeTodos ×4, EventTemplate ×2, title patterns ×5 |
 
+
+
 Test records: [impl/1](test/impl/1/result.md) · [impl/2](test/impl/2/result.md) · [impl/3](test/impl/3/result.md) · [impl/4](test/impl/4/result.md)
 
 ---
@@ -250,7 +302,7 @@ Xcode → CalendarTests target → Build Settings → `TEST_HOST` must be
 
 1. Settings → Notifications → Wise Calendar → Allow
 2. In-app Settings (⚙) → Notifications toggle ON
-3. DEBUG build: onboarding shown every launch — tap "Allow Notifications" on step 4
+3. DEBUG build: onboarding shown every launch — tap "Allow Notifications" on step 7
 
 ---
 

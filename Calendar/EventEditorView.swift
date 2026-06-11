@@ -79,6 +79,13 @@ struct EventEditorView: View {
 
         _repeatStartDate = State(initialValue: date)
         _repeatEndDate = State(initialValue: Calendar.current.date(byAdding: .year, value: 1, to: date) ?? date)
+
+        if mode == .diary {
+            let f = DateFormatter()
+            f.dateFormat = "yyyy.MM.dd"
+            let count = eventStore.events[eventStore.dateKey(from: date)]?.count ?? 0
+            _title = State(initialValue: "[\(f.string(from: date))]\(eventDayEmoji(count))수고했어요.")
+        }
     }
 
     var body: some View {

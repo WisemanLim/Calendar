@@ -15,5 +15,6 @@ struct RootView: View {
             .fullScreenCover(isPresented: $showOnboarding) {
                 OnboardingView(settings: settings) { showOnboarding = false }
             }
+            .preferredColorScheme(settings.appColorScheme.colorScheme)
     }
 }
