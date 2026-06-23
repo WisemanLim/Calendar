@@ -2,6 +2,20 @@ import SwiftUI
 import EventKit
 import PhotosUI
 
+enum RepeatFrequency: String, CaseIterable, Identifiable {
+    case daily  = "매일"
+    case weekly = "매주"
+    case yearly = "매년"
+    var id: Self { self }
+    var ekFrequency: EKRecurrenceFrequency {
+        switch self {
+        case .daily:  return .daily
+        case .weekly: return .weekly
+        case .yearly: return .yearly
+        }
+    }
+}
+
 enum MedicationPreset: String, CaseIterable {
     case morning = "아침"
     case lunch = "점심"
@@ -50,6 +64,8 @@ struct EventEditorView: View {
     @State private var eventLocation = ""
     @State private var medicationPreset: MedicationPreset = .morning
     @State private var repeatEnabled = false
+    @State private var repeatFrequency: RepeatFrequency = .yearly
+    @State private var selectedWeekdays: Set<Int> = []
     @State private var repeatStartDate: Date
     @State private var repeatEndDate: Date
 
@@ -195,7 +211,8 @@ struct EventEditorView: View {
                 }
                 .pickerStyle(.segmented)
                 .onChange(of: selectedCategory) { _, _ in
-                    selectedTemplate = nil; title = ""; repeatEnabled = false
+                    selectedTemplate = nil; title = ""
+                    repeatEnabled = false; repeatFrequency = .yearly; selectedWeekdays = []
                 }
             }
             Section("템플릿") {
@@ -233,6 +250,68 @@ struct EventEditorView: View {
         }
     }
 
+    // MARK: 반복 섹션 (매일·매주·매년 공통)
+
+    @ViewBuilder
+    private var repeatSection: some View {
+        Section(header: Text("반복")) {
+            Toggle("반복 설정", isOn: $repeatEnabled)
+            if repeatEnabled {
+                Picker("주기", selection: $repeatFrequency) {
+                    ForEach(RepeatFrequency.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .onChange(of: repeatFrequency) { _, f in
+                    if f != .weekly { selectedWeekdays = [] }
+                }
+                if repeatFrequency == .weekly {
+                    let labels = ["일", "월", "화", "수", "목", "금", "토"]
+                    HStack(spacing: 4) {
+                        ForEach(0..<7, id: \.self) { i in
+                            let rv = i + 1
+                            Button {
+                                if selectedWeekdays.contains(rv) { selectedWeekdays.remove(rv) }
+                                else { selectedWeekdays.insert(rv) }
+                            } label: {
+                                Text(labels[i])
+                                    .font(.system(size: 13, weight: .medium))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 6)
+                                    .background(selectedWeekdays.contains(rv) ? theme.accent : Color.gray.opacity(0.15))
+                                    .foregroundColor(selectedWeekdays.contains(rv) ? .white : .primary)
+                                    .cornerRadius(6)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                }
+                DatePicker("반복 시작일", selection: $repeatStartDate, displayedComponents: .date)
+                DatePicker("반복 종료일", selection: $repeatEndDate,
+                           in: repeatStartDate..., displayedComponents: .date)
+            }
+        }
+    }
+
+    private func buildRecurrenceRule(end: EKRecurrenceEnd?) -> EKRecurrenceRule {
+        switch repeatFrequency {
+        case .daily:
+            return EKRecurrenceRule(recurrenceWith: .daily, interval: 1, end: end)
+        case .weekly:
+            let fallback = Calendar.current.component(.weekday, from: eventStartTime)
+            let days: [EKRecurrenceDayOfWeek] = selectedWeekdays.isEmpty
+                ? [EKRecurrenceDayOfWeek(EKWeekday(rawValue: fallback)!)]
+                : selectedWeekdays.compactMap { EKRecurrenceDayOfWeek(EKWeekday(rawValue: $0)!) }
+            return EKRecurrenceRule(
+                recurrenceWith: .weekly, interval: 1,
+                daysOfTheWeek: days,
+                daysOfTheMonth: nil, monthsOfTheYear: nil,
+                weeksOfTheYear: nil, daysOfTheYear: nil,
+                setPositions: nil, end: end)
+        case .yearly:
+            return EKRecurrenceRule(recurrenceWith: .yearly, interval: 1, end: end)
+        }
+    }
+
     @ViewBuilder
     private func timeSection(for tmpl: EventTemplate) -> some View {
         switch tmpl.category {
@@ -266,17 +345,7 @@ struct EventEditorView: View {
                 }
                 .foregroundColor(theme.accent)
             }
-            Section(header: Text("반복")) {
-                Toggle("반복 설정", isOn: $repeatEnabled)
-                if repeatEnabled {
-                    DatePicker("반복 시작일", selection: $repeatStartDate, displayedComponents: .date)
-                    DatePicker("반복 종료일", selection: $repeatEndDate,
-                               in: repeatStartDate..., displayedComponents: .date)
-                    Text("매년(Yearly) 반복")
-                        .font(.system(size: 13))
-                        .foregroundColor(.gray)
-                }
-            }
+            repeatSection
             Section(header: Text("사진")) {
                 if let img = selectedImage {
                     Image(uiImage: img)
@@ -318,17 +387,7 @@ struct EventEditorView: View {
                         if eventEndTime < newVal { eventEndTime = newVal }
                     }
             }
-            Section(header: Text("반복")) {
-                Toggle("반복 설정", isOn: $repeatEnabled)
-                if repeatEnabled {
-                    DatePicker("반복 시작일", selection: $repeatStartDate, displayedComponents: .date)
-                    DatePicker("반복 종료일", selection: $repeatEndDate,
-                               in: repeatStartDate..., displayedComponents: .date)
-                    Text("매년(Yearly) 반복")
-                        .font(.system(size: 13))
-                        .foregroundColor(.gray)
-                }
-            }
+            repeatSection
         }
     }
 
@@ -396,10 +455,7 @@ struct EventEditorView: View {
                 startDate = eventStartTime
                 endDate = eventStartTime
                 if repeatEnabled {
-                    recurrenceRules = [EKRecurrenceRule(
-                        recurrenceWith: .yearly, interval: 1,
-                        end: EKRecurrenceEnd(end: repeatEndDate)
-                    )]
+                    recurrenceRules = [buildRecurrenceRule(end: EKRecurrenceEnd(end: repeatEndDate))]
                 } else if !hasDatePattern {
                     recurrenceRules = [EKRecurrenceRule(recurrenceWith: .yearly, interval: 1, end: nil)]
                 }
@@ -408,17 +464,11 @@ struct EventEditorView: View {
                 endDate = eventEndTime > eventStartTime ? eventEndTime : eventStartTime.addingTimeInterval(3600)
                 let loc = eventLocation.trimmingCharacters(in: .whitespaces)
                 location = loc.isEmpty ? nil : loc
-                if !hasDatePattern {
-                    recurrenceRules = [EKRecurrenceRule(recurrenceWith: .yearly, interval: 1, end: nil)]
-                }
             case .fixed:
                 startDate = eventStartTime
                 endDate = eventEndTime >= eventStartTime ? eventEndTime : eventStartTime
                 if repeatEnabled {
-                    recurrenceRules = [EKRecurrenceRule(
-                        recurrenceWith: .yearly, interval: 1,
-                        end: EKRecurrenceEnd(end: repeatEndDate)
-                    )]
+                    recurrenceRules = [buildRecurrenceRule(end: EKRecurrenceEnd(end: repeatEndDate))]
                 } else if !hasDatePattern {
                     recurrenceRules = [EKRecurrenceRule(recurrenceWith: .yearly, interval: 1, end: nil)]
                 }

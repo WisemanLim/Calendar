@@ -55,20 +55,20 @@ Wise-Calendar/
 | 파일 | 역할 |
 |------|------|
 | `RootView` | 온보딩 분기 (`shouldShowOnboarding` → `.fullScreenCover`) |
-| `CalendarView` | 큰 날짜 히어로(더블탭·롱프레스=이벤트 추가), 헤더, 주간 스트립(좌우 스와이프로 전주·다음주 이동), 하단 2개월 미니 달력, overdue 적색, 이벤트 수정·삭제, 무지개 색상 |
+| `CalendarView` | 큰 날짜 히어로(더블탭·롱프레스=이벤트 추가), 헤더(음력+날씨 아이콘+온도 같은 라인), 주간 스트립(좌우 스와이프로 전주·다음주 이동), 하단 2개월 미니 달력, overdue 적색, **이벤트 탭=편집 즉시 진입**, 편집 시트 닫힘 시 캐시 무효화·재로드, 무지개 색상 |
 | `CalendarLogic` | 그리드 42칸 생성, `dateKey(yyyy-MM-dd)`, SUN-first 정렬 |
 | `CalendarTheme` | `accent/month/year/todayTint/navBackground/sunday/saturday`; `.default` 제공 |
 | `CalendarEventItem` | 이벤트 표시용 값 타입 — `displayTitle("HH:mm 제목")`, `isOverdue`, `isTodo` |
-| `EventStoreManager` | `EKEventStore` 래퍼, `[String:[CalendarEventItem]]` 캐시, `addEvent` / `updateEvent` / `deleteEvent` / `fetchEvent` |
+| `EventStoreManager` | `EKEventStore` 래퍼, `[String:[CalendarEventItem]]` 캐시, `addEvent` / `updateEvent` / `deleteEvent` / `fetchEvent`. `cachedEventCounts` UserDefaults 캐시(`wc.eventCountCache`) — 앱 시작 즉시 이벤트 갯수 이모지 표시 |
 | `AppSettings` | UserDefaults: `plannerMode`, `notificationsEnabled`, `onboardingCompleted`, `enabledCalendarIDs`, `lastSeenVersion`, `appColorScheme` |
 | `AppColorScheme` | `system`/`dark`/`light` 롤링 전환 enum — `icon`(SF Symbol), `colorScheme: ColorScheme?`, `next` 프로퍼티 |
-| `WeatherService` | WeatherKit(Apple) 우선 → Open-Meteo 폴백. `dailyWeather[yyyy-MM-dd]` Published. `WeatherCondition` SF Symbol + tintColor |
+| `WeatherService` | WeatherKit(Apple) 우선 → Open-Meteo 폴백. `dailyWeather[yyyy-MM-dd]` + `dailyTemperature[yyyy-MM-dd]: [String: Int]` Published. `WeatherCondition: String, Codable, Equatable` — UserDefaults 캐시(`wc.dailyWeather`, `wc.dailyTemperature`) 선표시 후 변경 시만 갱신. 일정 목록 헤더에 날씨 아이콘+온도 표시 |
 | `eventDayEmoji()` | 이벤트 갯수 → 얼굴 이모지: 0~1=😀, 2~3=😊, 4+=🤯 |
 | `PlannerMode` | `diary` · `todo` · `personalEvent` |
 | `PlannerLogic` | `dayOfYear`, `fixedTitle("[#ddd] …")`, `encodeTodos`, `decodeTodos` |
 | `EventTemplate` | `medication/appointment/fixed` 카테고리, `defaultStartHour`, `defaultDurationMinutes` |
 | `TemplateStore` | UserDefaults JSON 영속, seed 7건, `update()` |
-| `EventEditSheet` | 등록 이벤트 수정 시트 — 제목·시간·장소·메모 편집, `updateEvent` 호출 |
+| `EventEditSheet` | 등록 이벤트 수정 시트 — 제목·시간·장소·메모 편집, `updateEvent` 호출. 메모 `TextEditor` 내용 줄 수 기준 자동 확장(최소 80pt) |
 | `EventCopySheet` | 이벤트 복사 시트 — DatePicker(목표 날짜) + 제목·시간·메모 미리보기, `addEvent` 호출 |
 | `eventCountColor()` | 이벤트 갯수 → 무지개 7단계: 0=기본, 1=노, 2=주, 3=초, 4=남, 5=보, 6+=빨 |
 | `MedicationPreset` | 아침(7h)/점심(12h)/저녁(18h)/직접 — 복용 시간 프리셋 |
@@ -122,7 +122,7 @@ WeatherKit(Apple)을 기본으로 사용하고, 실패 시 Open-Meteo(무료·AP
 3. **WeatherKit** 체크박스 활성화 → Save
 4. Xcode에서 재빌드 (entitlements 파일 `Calendar/Calendar.entitlements` 이미 포함됨)
 
-> WeatherKit이 비활성화 상태이면 앱이 자동으로 Open-Meteo로 폴백하므로 날씨 아이콘은 정상 표시됨.
+> WeatherKit이 비활성화 상태이면 앱이 자동으로 Open-Meteo로 폴백하므로 날씨 아이콘 및 온도는 정상 표시됨. Open-Meteo 요청 파라미터: `weather_code,temperature_2m_max`.
 
 ### WeatherKit API 사용
 
@@ -135,6 +135,8 @@ for day in forecast.forecast {
     let condition = WeatherCondition.from(wkCondition: day.condition)
     // condition.sfSymbol → SF Symbol 이름 (예: "sun.max.fill")
     // condition.tintColor → SwiftUI Color
+    let tempC = Int(day.highTemperature.converted(to: .celsius).value.rounded())
+    // → dailyTemperature[yyyy-MM-dd] 에 저장, 헤더에 온도 표시
 }
 ```
 
@@ -189,7 +191,7 @@ xcodebuild test \
 | 화면 | 진입 방법 | 설명 |
 |------|-----------|------|
 | `OnboardingView` | 앱 시작 (Release: 최초 설치·재설치·버전 업데이트 / DEBUG: 매회) | 소개+모드선택 → 일기+할일 → 개인이벤트 → 연동+알림 4단계 |
-| `CalendarView` | 온보딩 완료 후 기본 화면 | 큰 날짜 히어로 + 헤더 + 하단 미니 달력, overdue 적색 |
+| `CalendarView` | 온보딩 완료 후 기본 화면 | 큰 날짜 히어로 + 헤더(음력+날씨 아이콘+온도 같은 라인) + 일정 목록 + 하단 미니 달력, overdue 적색 |
 | `EventEditorView` | `+` 버튼 탭 | 모드별 이벤트 입력 (시간·장소·반복) |
 | `SettingsView` | `⚙` 버튼 탭 | 캘린더 연동 · 플래너 모드 · 알림 · 화면 테마(system/dark/light 롤링) |
 
@@ -258,6 +260,15 @@ PlannerLogic.hasTitleDatePattern("아침 약 복용") // false → auto RRULE
 // EventEditorView에서 앨범 또는 카메라로 사진 선택
 // 저장 성공 후 자동으로 EventImageStore에 연결
 EventImageStore.shared.loadImage(for: eventId) // → UIImage?
+```
+
+### 일정 목록 음력+날씨 표시
+
+```swift
+// CalendarView 헤더 — 음력과 날씨를 같은 라인에 표시
+// weatherService.dailyWeather["2026-06-23"] → WeatherCondition.clear
+// weatherService.dailyTemperature["2026-06-23"] → 28  (°C)
+// → Image(systemName: "sun.max.fill") + Text("28°")
 ```
 
 ### 알림 예약

@@ -206,18 +206,27 @@ struct CalendarView: View {
                     // Schedule list overlay
                     VStack(spacing: 8) {
                         VStack(spacing: 15) {
-                            // 음력 날짜 — 좌측최상단 (상단여백=좌측여백=25pt)
-                            Text(lunarDateString(for: selectedDate))
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.gray.opacity(0.5))
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 25)
+                            // 음력 날짜 + 날씨 — 같은 라인
+                            HStack(spacing: 6) {
+                                Text(lunarDateString(for: selectedDate))
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.gray.opacity(0.5))
+                                Spacer()
+                                let dateKey = eventStore.dateKey(from: selectedDate)
+                                if let condition = weatherService.dailyWeather[dateKey] {
+                                    Image(systemName: condition.sfSymbol)
+                                        .foregroundColor(condition.tintColor)
+                                        .font(.system(size: 14))
+                                    if let temp = weatherService.dailyTemperature[dateKey] {
+                                        Text("\(temp)°")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundColor(.gray.opacity(0.7))
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 25)
                             let memos = memosForSelectedDate()
                             if !memos.isEmpty {
-                                Text("SCHEDULE")
-                                    .font(.system(size: 14, weight: .bold))
-                                    .foregroundColor(.gray.opacity(0.8))
-                                    .padding(.bottom, 5)
                                 ForEach(memos) { memo in
                                     HStack(alignment: .top, spacing: 10) {
                                         Circle()
@@ -232,10 +241,8 @@ struct CalendarView: View {
                                     }
                                     .padding(.horizontal, 25)
                                     .contentShape(Rectangle())
+                                    .onTapGesture { editingEvent = memo }
                                     .contextMenu {
-                                        Button { editingEvent = memo } label: {
-                                            Label("편집", systemImage: "pencil")
-                                        }
                                         Button { copyConfig = EventCopyConfig(item: memo, includeNotes: true) } label: {
                                             Label("복사 (내용포함)", systemImage: "doc.on.doc")
                                         }
@@ -299,7 +306,10 @@ struct CalendarView: View {
                                 eventStore: eventStore, templateStore: templateStore,
                                 notificationsEnabled: settings.notificationsEnabled, theme: theme)
             }
-            .sheet(item: $editingEvent) { event in
+            .sheet(item: $editingEvent, onDismiss: {
+                eventStore.invalidateCache(for: selectedDate)
+                loadEvents(for: selectedDate)
+            }) { event in
                 EventEditSheet(item: event, date: selectedDate, eventStore: eventStore)
             }
             .sheet(item: $copyConfig) { config in
@@ -503,7 +513,8 @@ struct WeekStripView: View {
         let dayNum = cal.component(.day, from: date)
         let dateKey = Self.dateKeyFormatter.string(from: date)
         let condition = weatherService.dailyWeather[dateKey]
-        let eventCount = eventStore.events[eventStore.dateKey(from: date)]?.count ?? 0
+        let dk = eventStore.dateKey(from: date)
+        let eventCount = eventStore.events[dk]?.count ?? eventStore.cachedEventCounts[dk] ?? 0
 
         VStack(spacing: 4) {
             // Weekday abbreviation
@@ -610,7 +621,8 @@ struct MonthView: View {
             selectedDate: selectedDate,
             today: Date(),
             eventCount: { d in
-                eventStore.events[eventStore.dateKey(from: d)]?.count ?? 0
+                let dk = eventStore.dateKey(from: d)
+                return eventStore.events[dk]?.count ?? eventStore.cachedEventCounts[dk] ?? 0
             }
         )
     }
@@ -735,6 +747,21 @@ struct EventEditSheet: View {
     @State private var startTime: Date
     @State private var endTime: Date
     @State private var location: String
+    @State private var notesContentHeight: CGFloat = 80
+
+    private var notesMaxHeight: CGFloat { UIScreen.main.bounds.height - 100 }
+
+    private func calcNotesHeight(width: CGFloat) -> CGFloat {
+        guard !notes.isEmpty else { return 80 }
+        let font = UIFont.systemFont(ofSize: 16)
+        let rect = (notes as NSString).boundingRect(
+            with: CGSize(width: max(100, width - 16), height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin, .usesFontLeading],
+            attributes: [.font: font],
+            context: nil
+        )
+        return max(80, ceil(rect.height) + 32)
+    }
 
     init(item: CalendarEventItem, date: Date, eventStore: EventStoreManager) {
         self.item = item
@@ -758,7 +785,18 @@ struct EventEditSheet: View {
                 }
                 Section("장소") { TextField("장소 (선택)", text: $location) }
                 Section("메모") {
-                    TextEditor(text: $notes).frame(minHeight: 80)
+                    TextEditor(text: $notes)
+                        .scrollDisabled(notesContentHeight <= notesMaxHeight)
+                        .frame(height: max(80, min(notesContentHeight, notesMaxHeight)))
+                        .background(GeometryReader { geo in
+                            Color.clear
+                                .onAppear {
+                                    notesContentHeight = calcNotesHeight(width: geo.size.width)
+                                }
+                                .onChange(of: notes) { _, _ in
+                                    notesContentHeight = calcNotesHeight(width: geo.size.width)
+                                }
+                        })
                 }
             }
             .navigationTitle("일정 편집")

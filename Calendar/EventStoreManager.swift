@@ -20,9 +20,13 @@ class EventStoreManager: NSObject, ObservableObject {
 
     @Published private(set) var hasAccess: Bool = false
     @Published private(set) var events: [String: [CalendarEventItem]] = [:]
+    @Published private(set) var cachedEventCounts: [String: Int] = [:]
 
     private override init() {
         super.init()
+        if let cache = UserDefaults.standard.dictionary(forKey: "wc.eventCountCache") as? [String: Int] {
+            cachedEventCounts = cache
+        }
         Task {
             await requestAccess()
         }
@@ -98,6 +102,7 @@ class EventStoreManager: NSObject, ObservableObject {
             }
 
         self.events[key] = items
+        updateCountCache(key: key, count: items.count)
         return items
     }
 
@@ -140,6 +145,14 @@ class EventStoreManager: NSObject, ObservableObject {
 
     func invalidateCache(for date: Date) { events[dateKey(from: date)] = nil }
 
+    private func updateCountCache(key: String, count: Int) {
+        var cache = UserDefaults.standard.dictionary(forKey: "wc.eventCountCache") as? [String: Int] ?? [:]
+        guard cache[key] != count else { return }
+        cache[key] = count
+        UserDefaults.standard.set(cache, forKey: "wc.eventCountCache")
+        cachedEventCounts[key] = count
+    }
+
     /// 달 전체 이벤트를 단일 쿼리로 불러와 일별 캐시를 채운다.
     /// 이미 캐시된 날은 건너뜀. 미니 달력 색상 즉시 표시용.
     func fetchEventsForMonth(year: Int, month: Int) {
@@ -180,6 +193,7 @@ class EventStoreManager: NSObject, ObservableObject {
                             isTodo: isTodo
                         )
                     }
+                updateCountCache(key: key, count: events[key]?.count ?? 0)
             }
             current = Calendar.current.date(byAdding: .day, value: 1, to: current) ?? startOfNext
         }

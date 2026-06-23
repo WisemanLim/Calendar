@@ -28,7 +28,7 @@
   `0=기본`, `1=노(yellow)`, `2=주(orange)`, `3=초(green)`, `4=남(navy)`, `5=보(purple)`, `6+=빨(red)`.
   파란색(`theme.accent`)은 선택된 날짜(미니 달력)를 의미하며 변경 없음.
   히어로 숫자는 동일 색상을 opacity 0.28 로 적용(워터마크 효과 유지).
-- **이벤트 수정/삭제**: 등록된 이벤트 길게 누르기(컨텍스트 메뉴) → 편집(`EventEditSheet`) / 삭제.
+- **이벤트 수정/삭제**: 등록된 이벤트 **탭** → 편집(`EventEditSheet`) 즉시 진입. 길게 누르기(컨텍스트 메뉴) → 복사·삭제.
 
 **확장 (다음 범위 — 기능 확장 + 리팩터/표준화)**
 - 이벤트 추가/편집/삭제 (EventKit 쓰기).
@@ -46,6 +46,7 @@
    - 날씨 아이콘: SF Symbol (`sun.max.fill` 등) + `WeatherCondition.tintColor`.
    - 날씨 미조회 시 이모지 대체: 0~1개 이벤트 = 😀, 2~3개 = 😊, 4개 이상 = 🤯.
    - 날씨 데이터: WeatherKit(Apple) 우선 + Open-Meteo(무료·무키) 폴백 + CoreLocation, 실패 시 이모지 자동 대체.
+   - `WeatherService.dailyTemperature: [String: Int]` — 날짜키별 일 최고기온(°C). WeatherKit: `day.highTemperature.converted(to: .celsius)`, Open-Meteo: `temperature_2m_max` 파라미터. 캐시키: `wc.dailyTemperature`.
    - **좌우 스와이프**: 좌 스와이프 → 다음 주(+7일), 우 스와이프 → 이전 주(-7일). 임계값 50pt, 러버밴드(0.25×) 피드백.
 4. **Today 버튼** — Row 1 중앙. 선택일이 당일 아닐 때만 노출.
 5. **연 이동** — `<`(이전년)·`>`(다음년). 버튼·숫자 색 = `CalendarTheme.year`.
@@ -53,6 +54,10 @@
 7. **하단 달력** — 현재월·다음월 2개를 좌우 배치. 선택/오늘/이벤트 점 = `theme.accent`. 좌우 스와이프로 월 이동(좌 → 다음달, 우 → 이전달). 임계값 50pt, 러버밴드(0.25×) 피드백.
 8. **＋ 버튼 길게 누르기** — `confirmationDialog`로 현재 설정 외 다른 입력 방식 목록 노출,
    선택 시 `oneTimeModeOverride` 에 저장 → 해당 세션 1회만 적용 후 초기화.
+9. **일정목록(SCHEDULE 영역) 상단 정보 바** — "SCHEDULE" 헤더 텍스트 없음. 대신 선택일 기준 단일 라인으로 표시:
+   - **좌측**: 음력 날짜 (예: `음력 5월 28일`)
+   - **우측**: 날씨 아이콘 + 일 최고기온 (예: `☀ 29°`) — `WeatherService.dailyTemperature[dateKey]` 사용.
+   - 온도 미조회 시 아이콘만 표시.
 
 ### 3.2 설정 · 플래너 모드 · 템플릿 · 온보딩 (2026-06-11 추가 요구)
 
@@ -79,7 +84,7 @@
 - **personalEvent(개인 이벤트)** — 추가 시 **템플릿 선택** 후 프리필 입력. 카테고리별 시간 설정 방식 상이.
   - **복용(medication)**: 아침(7시)/점심(12시)/저녁(18시) 프리셋 버튼 + 직접 입력(`DatePicker`). 선택한 시간을 "기본 시간으로 저장" 시 해당 템플릿의 `defaultStartHour` 갱신.
     반복 토글(매년 Yearly) + 시작일·종료일 선택 지원. **사진/카메라** 첨부 가능 — `PhotosPicker`(앨범) 또는 `UIImagePickerController`(카메라), `EventImageStore`에 JPEG 저장.
-  - **약속(appointment)**: 시작/종료 시각 `DatePicker` 각각 설정. **장소(location)** 텍스트 입력 (선택) → EKEvent.location 저장, iOS 지도 앱 연동.
+  - **약속(appointment)**: 시작/종료 시각 `DatePicker` 각각 설정. **장소(location)** 텍스트 입력 (선택) → EKEvent.location 저장, iOS 지도 앱 연동. 반복 설정 없음.
   - **고정(fixed)**: 시작/종료 시각 `DatePicker` 설정(기본 종료=시작과 동일). 반복 토글 활성화 시 반복 시작일·종료일 선택, 매년(yearly) `EKRecurrenceRule` 적용.
 
 **(B-2) 개인이벤트 타이틀 날짜 패턴 치환**
@@ -97,7 +102,7 @@
 
 패턴 조합 가능: `[정기작업] (d###) yyyy-mm-dd` → `[정기작업] (067) 2026-03-08`
 
-**자동 RRULE**: 제목에 날짜 패턴이 없으면 복용/약속 카테고리는 자동으로 yearly `EKRecurrenceRule`을 생성한다. 복용 카테고리는 명시적 반복 토글로도 제어 가능.
+**자동 RRULE**: 제목에 날짜 패턴이 없으면 복용 카테고리는 자동으로 yearly `EKRecurrenceRule`을 생성한다. 복용 카테고리는 명시적 반복 토글로도 제어 가능. 약속(appointment) 카테고리는 반복 설정 미지원.
 
 **(C) 템플릿(`EventTemplate`)** — UserDefaults(JSON) 영속.
 - 카테고리: `medication`(복용: 아침/점심/저녁), `appointment`(약속: 연인/친구/회식 등), `fixed`(고정).
@@ -182,6 +187,15 @@
 - ~~diary 제목 기본값 없음~~ → 에디터 열 때 `[yyyy.MM.dd]😀수고했어요.` 자동 채움 (이벤트 수 기반 이모지).
 - ~~날씨 WeatherKit 미사용~~ → WeatherKit 우선 + Open-Meteo 폴백; entitlements 및 `NSLocationWhenInUseUsageDescription` 추가.
 - ~~테마 전환 없음~~ → `AppColorScheme`(system/dark/light) 롤링 버튼, `SettingsView` 상단 내비게이션 바에 배치, `preferredColorScheme` 앱 전체 반영.
+
+- ~~일정목록 날씨/음력 별도 라인~~ → 음력+날씨(아이콘+온도) 단일 라인으로 통합.
+- ~~SCHEDULE 헤더 텍스트~~ → 제거.
+- ~~날씨 온도 미표시~~ → `WeatherService.dailyTemperature` 추가; WeatherKit `day.highTemperature` / Open-Meteo `temperature_2m_max` 조회, 캐시키 `wc.dailyTemperature`.
+- ~~약속 반복일정 UI 불필요~~ → appointment 카테고리 반복 섹션 제거.
+- ~~편집 저장 후 즉시 화면 미갱신~~ → `sheet(item:onDismiss:)`로 캐시 무효화·재로드 추가.
+- ~~이벤트 탭 시 편집 진입 없음~~ → 단순 탭으로 `EventEditSheet` 즉시 진입, 컨텍스트 메뉴는 복사·삭제만 유지.
+- ~~메모 블럭 고정 높이~~ → `TextEditor` 최소 80pt, 내용 줄 수 기준 자동 확장 (`notesEditorHeight` computed).
+- ~~날씨·이모지 매번 조회~~ → `WeatherCondition: String, Codable, Equatable` + UserDefaults 캐시 (`wc.dailyWeather`); 초기 로드 시 캐시 선표시 → 변경 시만 갱신·저장. 이벤트 갯수도 `cachedEventCounts`(`wc.eventCountCache`) 로 앱 시작 즉시 이모지 표시.
 
 **잔여**
 - `EventStoreManager` 가 `hasAccess` 변경을 구독하지 않음 → 권한 늦은 허용 시 화면 미갱신.

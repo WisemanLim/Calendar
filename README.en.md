@@ -55,14 +55,14 @@ Wise-Calendar/
 | File | Responsibility |
 |------|----------------|
 | `RootView` | Onboarding gate (`shouldShowOnboarding` → `.fullScreenCover`) |
-| `CalendarView` | Date hero (double-tap/long-press = add event), header, 2-month mini calendar, overdue in red, event edit/delete, rainbow colors |
+| `CalendarView` | Date hero (double-tap/long-press = add event), header, 2-month mini calendar, overdue in red, event edit/delete, rainbow colors; schedule list shows lunar date + weather icon (temperature) on same line (no "SCHEDULE" header text) |
 | `CalendarLogic` | 42-cell grid, `dateKey(yyyy-MM-dd)`, SUN-first alignment |
 | `CalendarTheme` | `accent/month/year/todayTint/navBackground/sunday/saturday`; `.default` preset |
 | `CalendarEventItem` | Display value type — `displayTitle("HH:mm title")`, `isOverdue`, `isTodo` |
 | `EventStoreManager` | `EKEventStore` wrapper, `[String:[CalendarEventItem]]` cache, `addEvent` / `updateEvent` / `deleteEvent` / `fetchEvent` |
 | `AppSettings` | UserDefaults: `plannerMode`, `notificationsEnabled`, `onboardingCompleted`, `enabledCalendarIDs`, `lastSeenVersion`, `appColorScheme` |
 | `AppColorScheme` | Rolling color scheme enum — `system`/`dark`/`light`; `icon` (SF Symbol), `colorScheme: ColorScheme?`, `next` cycling property |
-| `WeatherService` | WeatherKit (primary) → Open-Meteo fallback. `dailyWeather[yyyy-MM-dd]` Published. `WeatherCondition` with SF Symbol + tintColor |
+| `WeatherService` | WeatherKit (primary) → Open-Meteo fallback. `dailyWeather[yyyy-MM-dd]` Published. `dailyTemperature[yyyy-MM-dd]` Published (high temperature °C). `WeatherCondition` with SF Symbol + tintColor |
 | `eventDayEmoji()` | Event count → face emoji: 0–1=😀, 2–3=😊, 4+=🤯 (WeekStrip fallback when no weather) |
 | `PlannerMode` | `diary` · `todo` · `personalEvent` |
 | `PlannerLogic` | `dayOfYear`, `fixedTitle("[#ddd] …")`, `encodeTodos`, `decodeTodos` |
@@ -153,7 +153,7 @@ xcodebuild test \
 | Screen | Entry Point | Description |
 |--------|-------------|-------------|
 | `OnboardingView` | App launch (Release: first install / reinstall / version update; DEBUG: always) | 4 steps: intro+mode select → diary+todo → personal event → integration+notifications |
-| `CalendarView` | Default after onboarding | Date hero + 3-row header (util bar / month nav / week strip with weather + left/right swipe ±7 days) + 2-month mini calendar, overdue in red |
+| `CalendarView` | Default after onboarding | Date hero + 3-row header (util bar / month nav / week strip with weather + left/right swipe ±7 days) + 2-month mini calendar, overdue in red; schedule list shows lunar date + weather icon (temperature) on same line |
 | `EventEditorView` | `+` button tap | Mode-specific event input (time, location, repeat); diary pre-fills `[yyyy.MM.dd]😀수고했어요.` |
 | `SettingsView` | `⚙` button tap | Calendar integration · planner mode · notifications · color scheme (system/dark/light rolling toggle) |
 
@@ -168,7 +168,7 @@ xcodebuild test \
 | `diary` | Editor open time = startDate, save time = endDate | Free text |
 | `todo` | due-date DatePicker → startDate = endDate = deadline | `"- [ ] Item\n- [x] Done"` |
 | `personalEvent/medication` | Morning(7h)/Lunch(12h)/Evening(18h) preset or custom. Yearly repeat toggle. Photo/camera attachment. | nil |
-| `personalEvent/appointment` | Start + end DatePicker + location → EKEvent.location | nil |
+| `personalEvent/appointment` | Start + end DatePicker + location → EKEvent.location (no repeat) | nil |
 | `personalEvent/fixed` | Start + end time + yearly EKRecurrenceRule | nil |
 
 ### Overdue display (red)
@@ -243,6 +243,15 @@ Persisted to UserDefaults via `AppSettings.appColorScheme`. Applied app-wide via
 | `.heavyRain` | `.heavyRain` | `cloud.heavyrain.fill` |
 | `.snow`, `.heavySnow`, `.blizzard` | `.snow` | `snowflake` |
 | `.thunderstorms`, `.strongStorms` | `.thunderstorm` | `cloud.bolt.rain.fill` |
+
+`day.highTemperature` is used for daily temperature data. Open-Meteo fallback uses the `temperature_2m_max` parameter.
+
+```swift
+for day in forecast.forecast {
+    let condition = WeatherCondition.from(wkCondition: day.condition)
+    let tempCelsius = Int(day.highTemperature.converted(to: .celsius).value.rounded())
+}
+```
 
 ---
 

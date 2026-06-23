@@ -87,10 +87,10 @@ final class AppSettings: ObservableObject {
 
     /// 온보딩 노출 조건: DEBUG 매회 / 최초 설치 / 재설치(UserDefaults 초기화) / 버전 업데이트.
     var shouldShowOnboarding: Bool {
-        #if DEBUG
-        return true
-        #else
+//        #if DEBUG // 디버그 모드 스킵
+//        return true
+//        #else
         return !onboardingCompleted || lastSeenVersion != Self.currentBundleVersion
-        #endif
+//        #endif
     }
 }
