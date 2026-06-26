@@ -96,6 +96,7 @@ final class WeatherService: NSObject, ObservableObject {
     private var hasFetched = false
     private let cacheKey = "wc.dailyWeather"
     private let temperatureCacheKey = "wc.dailyTemperature"
+    private let lastFetchDateKey = "wc.lastFetchDate"
 
     override init() {
         super.init()
@@ -112,7 +113,12 @@ final class WeatherService: NSObject, ObservableObject {
     }
 
     func requestLocationAndFetch() {
-        guard !hasFetched else { return }
+        if let last = UserDefaults.standard.object(forKey: lastFetchDateKey) as? Date,
+           Calendar.current.isDateInToday(last) {
+            guard !hasFetched else { return }
+        } else {
+            hasFetched = false
+        }
         switch locationManager.authorizationStatus {
         case .notDetermined:
             locationManager.requestWhenInUseAuthorization()
@@ -162,6 +168,7 @@ final class WeatherService: NSObject, ObservableObject {
                 if let data = try? JSONEncoder().encode(tempResult) {
                     UserDefaults.standard.set(data, forKey: self.temperatureCacheKey)
                 }
+                UserDefaults.standard.set(Date(), forKey: self.lastFetchDateKey)
             }
         } catch {
             print("[Weather] WeatherKit 실패: \(error.localizedDescription) — Open-Meteo 폴백")
@@ -212,6 +219,7 @@ final class WeatherService: NSObject, ObservableObject {
                 if let data = try? JSONEncoder().encode(tempResult) {
                     UserDefaults.standard.set(data, forKey: self.temperatureCacheKey)
                 }
+                UserDefaults.standard.set(Date(), forKey: self.lastFetchDateKey)
             }
         }.resume()
     }

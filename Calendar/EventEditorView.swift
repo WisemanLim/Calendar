@@ -96,6 +96,10 @@ struct EventEditorView: View {
         _repeatStartDate = State(initialValue: date)
         _repeatEndDate = State(initialValue: Calendar.current.date(byAdding: .year, value: 1, to: date) ?? date)
 
+        if mode == .todo {
+            _selectedCategory = State(initialValue: .workEvent)
+        }
+
         if mode == .diary {
             let f = DateFormatter()
             f.dateFormat = "yyyy.MM.dd"
@@ -122,7 +126,7 @@ struct EventEditorView: View {
     private var content: some View {
         switch mode {
         case .diary: diaryEditor
-        case .todo: todoEditor
+        case .todo: templateEditor
         case .personalEvent: templateEditor
         }
     }
@@ -201,25 +205,32 @@ struct EventEditorView: View {
         }
     }
 
-    // MARK: personalEvent — 카테고리별 시간 설정
+    // MARK: 업무 이벤트 / 개인 이벤트 — 템플릿 선택 편집기
 
     private var templateEditor: some View {
         List {
-            Section("분류") {
-                Picker("분류", selection: $selectedCategory) {
-                    ForEach(TemplateCategory.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: selectedCategory) { _, _ in
-                    selectedTemplate = nil; title = ""
-                    repeatEnabled = false; repeatFrequency = .yearly; selectedWeekdays = []
+            if mode == .personalEvent {
+                Section("분류") {
+                    Picker("분류", selection: $selectedCategory) {
+                        ForEach(TemplateCategory.allCases.filter { $0 != .workEvent }) { Text($0.title).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: selectedCategory) { _, _ in
+                        selectedTemplate = nil; title = ""
+                        repeatEnabled = false; repeatFrequency = .yearly; selectedWeekdays = []
+                    }
                 }
             }
             Section("템플릿") {
                 ForEach(templateStore.templates(in: selectedCategory)) { t in
                     Button {
                         selectedTemplate = t
-                        title = t.fixedDisplayTitle ?? t.titleFormat
+                        if t.isTodo {
+                            title = ""
+                            todos = [TodoItem(text: "")]
+                        } else {
+                            title = t.fixedDisplayTitle ?? t.titleFormat
+                        }
                         applyTemplateTime(t)
                     } label: {
                         HStack {
@@ -233,8 +244,38 @@ struct EventEditorView: View {
                 }
             }
             if let tmpl = selectedTemplate {
-                Section("제목 (편집 가능)") { TextField("제목", text: $title) }
-                timeSection(for: tmpl)
+                Section(tmpl.isTodo ? "제목 (선택)" : "제목 (편집 가능)") {
+                    TextField("제목", text: $title)
+                }
+                if tmpl.isTodo {
+                    Section("항목") {
+                        ForEach($todos) { $item in
+                            HStack {
+                                Button { item.done.toggle() } label: {
+                                    Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
+                                        .foregroundColor(item.done ? theme.accent : .gray)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                TextField("할 일 입력", text: $item.text)
+                                    .strikethrough(item.done)
+                            }
+                        }
+                        .onDelete { todos.remove(atOffsets: $0) }
+                        Button { todos.append(TodoItem(text: "")) } label: {
+                            Label("항목 추가", systemImage: "plus.circle")
+                        }
+                    }
+                    Section("목표 시간 (Due Date)") {
+                        DatePicker("기한", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
+                        if dueDate < Date() {
+                            Label("기한이 지났습니다", systemImage: "exclamationmark.triangle.fill")
+                                .foregroundColor(.red)
+                                .font(.system(size: 13))
+                        }
+                    }
+                } else {
+                    timeSection(for: tmpl)
+                }
             }
         }
         .onChange(of: photoItem) { _, newItem in
@@ -315,6 +356,15 @@ struct EventEditorView: View {
     @ViewBuilder
     private func timeSection(for tmpl: EventTemplate) -> some View {
         switch tmpl.category {
+        case .workEvent:
+            Section("시간") {
+                DatePicker("시작", selection: $eventStartTime, displayedComponents: .hourAndMinute)
+                DatePicker("종료", selection: $eventEndTime, displayedComponents: .hourAndMinute)
+            }
+            Section("장소") {
+                TextField("장소 입력 (선택)", text: $eventLocation)
+            }
+
         case .medication:
             Section("복용 시간") {
                 HStack(spacing: 6) {
@@ -418,7 +468,10 @@ struct EventEditorView: View {
     private var canSave: Bool {
         switch mode {
         case .diary: return !title.isEmpty || !diaryBody.isEmpty
-        case .todo: return todos.contains { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
+        case .todo:
+            guard let tmpl = selectedTemplate else { return false }
+            if tmpl.isTodo { return todos.contains { !$0.text.isEmpty } }
+            return !title.isEmpty
         case .personalEvent: return selectedTemplate != nil && !title.isEmpty
         }
     }
@@ -439,11 +492,21 @@ struct EventEditorView: View {
             endDate = Date()
 
         case .todo:
-            resolvedTitle = title.isEmpty ? "할 일" : title
-            let valid = todos.filter { !$0.text.trimmingCharacters(in: .whitespaces).isEmpty }
-            notes = PlannerLogic.encodeTodos(valid)
-            startDate = dueDate
-            endDate = dueDate
+            guard let tmpl = selectedTemplate else { return }
+            if tmpl.isTodo {
+                resolvedTitle = title.isEmpty ? "할 일" : title
+                let items = todos.filter { !$0.text.isEmpty }
+                notes = PlannerLogic.encodeTodos(items)
+                startDate = dueDate
+                endDate = dueDate
+            } else {
+                resolvedTitle = PlannerLogic.substituteTitlePatterns(title, date: date)
+                notes = nil
+                startDate = eventStartTime
+                endDate = eventEndTime > eventStartTime ? eventEndTime : eventStartTime.addingTimeInterval(3600)
+                let workLoc = eventLocation.trimmingCharacters(in: .whitespaces)
+                location = workLoc.isEmpty ? nil : workLoc
+            }
 
         case .personalEvent:
             guard let tmpl = selectedTemplate else { return }
@@ -451,6 +514,12 @@ struct EventEditorView: View {
             notes = nil
             let hasDatePattern = PlannerLogic.hasTitleDatePattern(title)
             switch tmpl.category {
+            case .workEvent:
+                startDate = eventStartTime
+                endDate = eventEndTime > eventStartTime ? eventEndTime : eventStartTime.addingTimeInterval(3600)
+                let loc = eventLocation.trimmingCharacters(in: .whitespaces)
+                location = loc.isEmpty ? nil : loc
+
             case .medication:
                 startDate = eventStartTime
                 endDate = eventStartTime

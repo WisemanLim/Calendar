@@ -2,7 +2,7 @@
 
 한국어 | [English](README.en.md)
 
-개인용 iOS 캘린더 + 플래너 앱. 큰 날짜 화면으로 일정을 직관적으로 입력하고, 다이어리·할 일·개인 이벤트 3가지 플래너 모드를 지원한다.
+개인용 iOS 캘린더 + 플래너 앱. 큰 날짜 화면으로 일정을 직관적으로 입력하고, 다이어리·업무 이벤트·개인 이벤트 3가지 플래너 모드를 지원한다.
 
 - **Profile**: ios-swiftui
 - **Domain**: ict-saas (consumer, 서버리스)
@@ -55,20 +55,20 @@ Wise-Calendar/
 | 파일 | 역할 |
 |------|------|
 | `RootView` | 온보딩 분기 (`shouldShowOnboarding` → `.fullScreenCover`) |
-| `CalendarView` | 큰 날짜 히어로(더블탭·롱프레스=이벤트 추가), 헤더(음력+날씨 아이콘+온도 같은 라인), 주간 스트립(좌우 스와이프로 전주·다음주 이동), 하단 2개월 미니 달력, overdue 적색, **이벤트 탭=편집 즉시 진입**, 편집 시트 닫힘 시 캐시 무효화·재로드, 무지개 색상 |
+| `CalendarView` | 큰 날짜 히어로(더블탭·롱프레스=이벤트 추가), 헤더(음력+날씨 아이콘+온도 같은 라인), 주간 스트립(좌우 스와이프로 전주·다음주 이동), 하단 2개월 미니 달력, overdue 적색, **이벤트 탭=편집 즉시 진입**, 편집 시트 닫힘 시 캐시 무효화·재로드, 무지개 색상. **비밀 약속**: `[비밀]` prefix 이벤트 `.opacity(0.25)` 흐린 표시. **롱프레스(0.6s)**: `addButtonLongPressed` 플래그로 팝업 즉시 닫힘 방지 |
 | `CalendarLogic` | 그리드 42칸 생성, `dateKey(yyyy-MM-dd)`, SUN-first 정렬 |
 | `CalendarTheme` | `accent/month/year/todayTint/navBackground/sunday/saturday`; `.default` 제공 |
 | `CalendarEventItem` | 이벤트 표시용 값 타입 — `displayTitle("HH:mm 제목")`, `isOverdue`, `isTodo` |
 | `EventStoreManager` | `EKEventStore` 래퍼, `[String:[CalendarEventItem]]` 캐시, `addEvent` / `updateEvent` / `deleteEvent` / `fetchEvent`. `cachedEventCounts` UserDefaults 캐시(`wc.eventCountCache`) — 앱 시작 즉시 이벤트 갯수 이모지 표시 |
 | `AppSettings` | UserDefaults: `plannerMode`, `notificationsEnabled`, `onboardingCompleted`, `enabledCalendarIDs`, `lastSeenVersion`, `appColorScheme` |
 | `AppColorScheme` | `system`/`dark`/`light` 롤링 전환 enum — `icon`(SF Symbol), `colorScheme: ColorScheme?`, `next` 프로퍼티 |
-| `WeatherService` | WeatherKit(Apple) 우선 → Open-Meteo 폴백. `dailyWeather[yyyy-MM-dd]` + `dailyTemperature[yyyy-MM-dd]: [String: Int]` Published. `WeatherCondition: String, Codable, Equatable` — UserDefaults 캐시(`wc.dailyWeather`, `wc.dailyTemperature`) 선표시 후 변경 시만 갱신. 일정 목록 헤더에 날씨 아이콘+온도 표시 |
+| `WeatherService` | WeatherKit(Apple) 우선 → Open-Meteo 폴백. `dailyWeather[yyyy-MM-dd]` + `dailyTemperature[yyyy-MM-dd]: [String: Int]` Published. `WeatherCondition: String, Codable, Equatable` — UserDefaults 캐시(`wc.dailyWeather`, `wc.dailyTemperature`) 선표시 후 변경 시만 갱신. **일별 강제 갱신**: `wc.lastFetchDate` 저장 → 앱 실행 시 오늘 날짜와 다르면 `hasFetched` 리셋 → 무조건 재조회 |
 | `eventDayEmoji()` | 이벤트 갯수 → 얼굴 이모지: 0~1=😀, 2~3=😊, 4+=🤯 |
-| `PlannerMode` | `diary` · `todo` · `personalEvent` |
+| `PlannerMode` | `diary`(일기) · `todo`(업무 이벤트) · `personalEvent`(개인 이벤트) |
 | `PlannerLogic` | `dayOfYear`, `fixedTitle("[#ddd] …")`, `encodeTodos`, `decodeTodos` |
-| `EventTemplate` | `medication/appointment/fixed` 카테고리, `defaultStartHour`, `defaultDurationMinutes` |
-| `TemplateStore` | UserDefaults JSON 영속, seed 7건, `update()` |
-| `EventEditSheet` | 등록 이벤트 수정 시트 — 제목·시간·장소·메모 편집, `updateEvent` 호출. 메모 `TextEditor` 내용 줄 수 기준 자동 확장(최소 80pt) |
+| `EventTemplate` | `workEvent`(업무 이벤트 전용)·`medication`·`appointment`·`fixed` 카테고리. `isTodo: Bool` 플래그(체크리스트 스타일). `defaultStartHour`, `defaultDurationMinutes` |
+| `TemplateStore` | UserDefaults JSON 영속, 키 `templates.v3`, seed 15건, `update()` |
+| `EventEditSheet` | 등록 이벤트 수정 시트 — 제목·시간·장소·메모 편집, `updateEvent` 호출. **시작 시간 변경 시 종료 시간 자동 조정** (`originalDuration` 유지). 메모 `TextEditor` 자동 확장 |
 | `EventCopySheet` | 이벤트 복사 시트 — DatePicker(목표 날짜) + 제목·시간·메모 미리보기, `addEvent` 호출 |
 | `eventCountColor()` | 이벤트 갯수 → 무지개 7단계: 0=기본, 1=노, 2=주, 3=초, 4=남, 5=보, 6+=빨 |
 | `MedicationPreset` | 아침(7h)/점심(12h)/저녁(18h)/직접 — 복용 시간 프리셋 |
@@ -204,9 +204,10 @@ xcodebuild test \
 | 모드 | 시간 처리 | EKEvent.notes 형식 |
 |------|-----------|-------------------|
 | `diary` | 에디터 오픈 시각=startDate, 저장 시각=endDate | 자유 텍스트 |
-| `todo` | due-date DatePicker → startDate=endDate=기한 | `"- [ ] 항목\n- [x] 완료"` |
-| `personalEvent/medication` | 아침(7h)/점심(12h)/저녁(18h) 프리셋 또는 직접. 반복 토글(yearly). 사진/카메라 첨부. | nil |
-| `personalEvent/appointment` | 시작·종료 DatePicker + 장소 → EKEvent.location | nil |
+| `todo/할 일` (`isTodo=true`) | due-date DatePicker → startDate=endDate=기한 | `"- [ ] 항목"` |
+| `todo/회의·세미나·회식` (`isTodo=false`) | 시작·종료 DatePicker + 장소 → EKEvent.location | nil |
+| `personalEvent/medication` | 아침(7h)/점심(12h)/저녁(18h)/임시긴급 프리셋 또는 직접. 반복 토글(yearly). 사진/카메라 첨부. | nil |
+| `personalEvent/appointment` | 시작·종료 DatePicker + 장소. **비밀 약속**: `[비밀]` prefix → opacity 0.25 표시 | nil |
 | `personalEvent/fixed` | 시작·종료 + yearly EKRecurrenceRule | nil |
 
 ### overdue 적색 표시

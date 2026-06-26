@@ -19,6 +19,7 @@ struct CalendarView: View {
     @State private var oneTimeModeOverride: PlannerMode? = nil
     @State private var showModeOverridePicker = false
     @State private var showSearch = false
+    @State private var addButtonLongPressed = false
     @State private var calendarSwipeOffset: CGFloat = 0
 
     private var showsTodayButton: Bool {
@@ -201,7 +202,7 @@ struct CalendarView: View {
                         if authorized { prefetchVisibleMonths() }
                     }
                     .simultaneousGesture(TapGesture(count: 2).onEnded { showEditor = true })
-                    .simultaneousGesture(LongPressGesture(minimumDuration: 0.6).onEnded { _ in showEditor = true })
+                    .simultaneousGesture(LongPressGesture(minimumDuration: 0.6).onEnded { _ in showModeOverridePicker = true })
 
                     // Schedule list overlay
                     VStack(spacing: 8) {
@@ -228,6 +229,7 @@ struct CalendarView: View {
                             let memos = memosForSelectedDate()
                             if !memos.isEmpty {
                                 ForEach(memos) { memo in
+                                    let isSecret = memo.title.hasPrefix("[비밀]")
                                     HStack(alignment: .top, spacing: 10) {
                                         Circle()
                                             .fill(memo.isOverdue ? Color.red : Color.blue)
@@ -239,6 +241,7 @@ struct CalendarView: View {
                                             .lineLimit(2)
                                         Spacer()
                                     }
+                                    .opacity(isSecret ? 0.25 : 1.0)
                                     .padding(.horizontal, 25)
                                     .contentShape(Rectangle())
                                     .onTapGesture { editingEvent = memo }
@@ -338,7 +341,10 @@ struct CalendarView: View {
     // MARK: - Add button (tap = default mode, long press = one-time override)
 
     private var addButton: some View {
-        Button { showEditor = true } label: {
+        Button {
+            if !addButtonLongPressed { showEditor = true }
+            addButtonLongPressed = false
+        } label: {
             Image(systemName: "plus.circle.fill")
                 .font(.system(size: 24))
                 .foregroundColor(theme.accent)
@@ -346,6 +352,7 @@ struct CalendarView: View {
         .buttonStyle(PlainButtonStyle())
         .simultaneousGesture(
             LongPressGesture(minimumDuration: 0.6).onEnded { _ in
+                addButtonLongPressed = true
                 showModeOverridePicker = true
             }
         )
@@ -746,6 +753,7 @@ struct EventEditSheet: View {
     @State private var notes: String
     @State private var startTime: Date
     @State private var endTime: Date
+    @State private var originalDuration: TimeInterval
     @State private var location: String
     @State private var notesContentHeight: CGFloat = 80
 
@@ -770,8 +778,11 @@ struct EventEditSheet: View {
         let ek = eventStore.fetchEvent(id: item.id)
         _title     = State(initialValue: item.title)
         _notes     = State(initialValue: ek?.notes ?? "")
-        _startTime = State(initialValue: ek?.startDate ?? item.startDate)
-        _endTime   = State(initialValue: ek?.endDate   ?? item.startDate.addingTimeInterval(3600))
+        let start  = ek?.startDate ?? item.startDate
+        let end    = ek?.endDate   ?? item.startDate.addingTimeInterval(3600)
+        _startTime = State(initialValue: start)
+        _endTime   = State(initialValue: end)
+        _originalDuration = State(initialValue: end.timeIntervalSince(start))
         _location  = State(initialValue: ek?.location  ?? "")
     }
 
@@ -781,6 +792,9 @@ struct EventEditSheet: View {
                 Section("제목") { TextField("제목", text: $title) }
                 Section("시간") {
                     DatePicker("시작", selection: $startTime, displayedComponents: [.date, .hourAndMinute])
+                        .onChange(of: startTime) { _, newStart in
+                            endTime = newStart.addingTimeInterval(originalDuration)
+                        }
                     DatePicker("종료", selection: $endTime,   displayedComponents: [.date, .hourAndMinute])
                 }
                 Section("장소") { TextField("장소 (선택)", text: $location) }

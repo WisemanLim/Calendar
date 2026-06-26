@@ -2,7 +2,7 @@
 
 [한국어](README.md) | English
 
-A personal iOS calendar + planner app. Large date display for intuitive scheduling, with three planner modes: diary, to-do, and personal event. Includes weather integration (WeatherKit + Open-Meteo fallback), event copy, and a rolling system/dark/light theme toggle.
+A personal iOS calendar + planner app. Large date display for intuitive scheduling, with three planner modes: diary, work event, and personal event. Includes weather integration (WeatherKit + Open-Meteo fallback), template-based event creation, secret appointment dimming, and a rolling system/dark/light theme toggle.
 
 - **Profile**: ios-swiftui
 - **Domain**: ict-saas (consumer, serverless)
@@ -55,20 +55,20 @@ Wise-Calendar/
 | File | Responsibility |
 |------|----------------|
 | `RootView` | Onboarding gate (`shouldShowOnboarding` → `.fullScreenCover`) |
-| `CalendarView` | Date hero (double-tap/long-press = add event), header, 2-month mini calendar, overdue in red, event edit/delete, rainbow colors; schedule list shows lunar date + weather icon (temperature) on same line (no "SCHEDULE" header text) |
+| `CalendarView` | Date hero (double-tap/long-press = add event), header, 2-month mini calendar, overdue in red, event edit/delete, rainbow colors. **Secret appointment**: events with `[비밀]` prefix shown at `.opacity(0.25)`. **Long-press(0.6s)**: `addButtonLongPressed` flag prevents popup from immediately closing |
 | `CalendarLogic` | 42-cell grid, `dateKey(yyyy-MM-dd)`, SUN-first alignment |
 | `CalendarTheme` | `accent/month/year/todayTint/navBackground/sunday/saturday`; `.default` preset |
 | `CalendarEventItem` | Display value type — `displayTitle("HH:mm title")`, `isOverdue`, `isTodo` |
 | `EventStoreManager` | `EKEventStore` wrapper, `[String:[CalendarEventItem]]` cache, `addEvent` / `updateEvent` / `deleteEvent` / `fetchEvent` |
 | `AppSettings` | UserDefaults: `plannerMode`, `notificationsEnabled`, `onboardingCompleted`, `enabledCalendarIDs`, `lastSeenVersion`, `appColorScheme` |
 | `AppColorScheme` | Rolling color scheme enum — `system`/`dark`/`light`; `icon` (SF Symbol), `colorScheme: ColorScheme?`, `next` cycling property |
-| `WeatherService` | WeatherKit (primary) → Open-Meteo fallback. `dailyWeather[yyyy-MM-dd]` Published. `dailyTemperature[yyyy-MM-dd]` Published (high temperature °C). `WeatherCondition` with SF Symbol + tintColor |
+| `WeatherService` | WeatherKit (primary) → Open-Meteo fallback. `dailyWeather[yyyy-MM-dd]` + `dailyTemperature[yyyy-MM-dd]` Published. **Daily forced refresh**: `wc.lastFetchDate` stored — on app launch, if date differs from today, `hasFetched` resets and re-fetches unconditionally |
 | `eventDayEmoji()` | Event count → face emoji: 0–1=😀, 2–3=😊, 4+=🤯 (WeekStrip fallback when no weather) |
-| `PlannerMode` | `diary` · `todo` · `personalEvent` |
+| `PlannerMode` | `diary` · `todo` (업무 이벤트 / Work Event) · `personalEvent` |
 | `PlannerLogic` | `dayOfYear`, `fixedTitle("[#ddd] …")`, `encodeTodos`, `decodeTodos` |
-| `EventTemplate` | `medication/appointment/fixed` categories, `defaultStartHour`, `defaultDurationMinutes` |
-| `TemplateStore` | UserDefaults JSON persistence, 7 seed templates, `update()` |
-| `EventEditSheet` | Edit sheet for registered events — title, time, location, notes, calls `updateEvent` |
+| `EventTemplate` | `workEvent`(todo mode only)·`medication`·`appointment`·`fixed` categories. `isTodo: Bool` flag for checklist-style save. `defaultStartHour`, `defaultDurationMinutes` |
+| `TemplateStore` | UserDefaults JSON persistence, key `templates.v3`, 15 seed templates, `update()` |
+| `EventEditSheet` | Edit sheet — title, time, location, notes, `updateEvent`. **Auto end-time adjustment**: changing start time shifts end time by original duration (`originalDuration`) |
 | `EventCopySheet` | Copy-event sheet — DatePicker (target date) + title/time/notes preview form, calls `addEvent` |
 | `eventCountColor()` | Event count → 7-level rainbow: 0=default, 1=yellow, 2=orange, 3=green, 4=navy, 5=purple, 6+=red |
 | `MedicationPreset` | Morning(7h)/Lunch(12h)/Evening(18h)/Custom — medication time presets |
@@ -166,9 +166,10 @@ xcodebuild test \
 | Mode | Time Handling | EKEvent.notes format |
 |------|---------------|----------------------|
 | `diary` | Editor open time = startDate, save time = endDate | Free text |
-| `todo` | due-date DatePicker → startDate = endDate = deadline | `"- [ ] Item\n- [x] Done"` |
-| `personalEvent/medication` | Morning(7h)/Lunch(12h)/Evening(18h) preset or custom. Yearly repeat toggle. Photo/camera attachment. | nil |
-| `personalEvent/appointment` | Start + end DatePicker + location → EKEvent.location (no repeat) | nil |
+| `todo/할 일` (`isTodo=true`) | due-date DatePicker → startDate = endDate = deadline | `"- [ ] Item"` (checklist) |
+| `todo/회의·세미나·회식` (`isTodo=false`) | Start + end DatePicker + location → EKEvent.location | nil |
+| `personalEvent/medication` | Morning(7h)/Lunch(12h)/Evening(18h)/Emergency preset or custom. Yearly repeat. Photo/camera. | nil |
+| `personalEvent/appointment` | Start + end DatePicker + location. **Secret**: `[비밀]` prefix → `.opacity(0.25)` display | nil |
 | `personalEvent/fixed` | Start + end time + yearly EKRecurrenceRule | nil |
 
 ### Overdue display (red)
