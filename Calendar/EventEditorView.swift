@@ -413,10 +413,12 @@ struct EventEditorView: View {
                     PhotosPicker(selection: $photoItem, matching: .images) {
                         Label("앨범", systemImage: "photo.on.rectangle")
                     }
+                    .buttonStyle(.borderless)
                     Divider().frame(height: 20)
                     Button { showCamera = true } label: {
                         Label("카메라", systemImage: "camera")
                     }
+                    .buttonStyle(.borderless)
                 }
             }
 

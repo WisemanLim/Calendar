@@ -21,6 +21,8 @@ struct CalendarView: View {
     @State private var showSearch = false
     @State private var addButtonLongPressed = false
     @State private var calendarSwipeOffset: CGFloat = 0
+    @State private var pullRefreshOffset: CGFloat = 0
+    @State private var isRefreshing = false
 
     private var showsTodayButton: Bool {
         !Calendar.current.isDateInToday(selectedDate)
@@ -206,6 +208,24 @@ struct CalendarView: View {
 
                     // Schedule list overlay
                     VStack(spacing: 8) {
+                        if isRefreshing || pullRefreshOffset > 20 {
+                            HStack {
+                                Spacer()
+                                if isRefreshing {
+                                    ProgressView()
+                                        .tint(Color.gray.opacity(0.6))
+                                } else {
+                                    Image(systemName: "arrow.down.circle")
+                                        .font(.system(size: 18, weight: .medium))
+                                        .foregroundColor(.gray.opacity(0.5))
+                                        .rotationEffect(.degrees(pullRefreshOffset > 60 ? 180 : 0))
+                                        .animation(.spring(response: 0.3), value: pullRefreshOffset > 60)
+                                }
+                                Spacer()
+                            }
+                            .frame(height: 24)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                        }
                         VStack(spacing: 15) {
                             // 음력 날짜 + 날씨 — 같은 라인
                             HStack(spacing: 6) {
@@ -268,8 +288,25 @@ struct CalendarView: View {
                     }
                     .frame(height: geometry.size.height * 0.48 - 40)
                     .padding(.bottom, 40)
+                    .offset(y: max(0, pullRefreshOffset))
                 }
                 .frame(height: geometry.size.height * 0.48)
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 15)
+                        .onChanged { value in
+                            guard abs(value.translation.height) > abs(value.translation.width) * 1.5,
+                                  value.translation.height > 0 else { return }
+                            withAnimation(.interactiveSpring()) {
+                                pullRefreshOffset = value.translation.height * 0.35
+                            }
+                        }
+                        .onEnded { value in
+                            let isVertical = abs(value.translation.height) > abs(value.translation.width) * 1.5
+                            let triggered = isVertical && value.translation.height > 60
+                            withAnimation(.spring()) { pullRefreshOffset = 0 }
+                            if triggered && !isRefreshing { refreshEvents() }
+                        }
+                )
                 .frame(maxWidth: .infinity)
                 .padding(.bottom, 10)
 
@@ -378,6 +415,17 @@ struct CalendarView: View {
 
     private func loadEvents(for date: Date) {
         _ = eventStore.fetchEvents(for: date)
+    }
+
+    private func refreshEvents() {
+        isRefreshing = true
+        weatherService.requestLocationAndFetch()
+        eventStore.invalidateCache(for: selectedDate)
+        loadEvents(for: selectedDate)
+        prefetchVisibleMonths()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+            withAnimation(.spring()) { isRefreshing = false }
+        }
     }
 
     private func prefetchVisibleMonths() {
