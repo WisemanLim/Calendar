@@ -55,7 +55,7 @@ Wise-Calendar/
 | File | Responsibility |
 |------|----------------|
 | `RootView` | Onboarding gate (`shouldShowOnboarding` → `.fullScreenCover`) |
-| `CalendarView` | Date hero (double-tap/long-press = add event), header, 2-month mini calendar, overdue in red, event edit/delete, rainbow colors. **Secret appointment**: events with `[비밀]` prefix shown at `.opacity(0.25)`. **Long-press(0.6s)**: `addButtonLongPressed` flag prevents popup from immediately closing |
+| `CalendarView` | Date hero (double-tap/long-press = add event), header, 2-month mini calendar, overdue in red, event edit/delete, rainbow colors. **Secret appointment**: events with `[비밀]` prefix shown at `.opacity(0.25)`. **Long-press(0.6s)**: `addButtonLongPressed` flag prevents popup from immediately closing. **Pull-to-refresh**: drag schedule list down 60pt+ → weather + events resync (`simultaneousGesture` vertical-direction detection) |
 | `CalendarLogic` | 42-cell grid, `dateKey(yyyy-MM-dd)`, SUN-first alignment |
 | `CalendarTheme` | `accent/month/year/todayTint/navBackground/sunday/saturday`; `.default` preset |
 | `CalendarEventItem` | Display value type — `displayTitle("HH:mm title")`, `isOverdue`, `isTodo` |
@@ -153,7 +153,7 @@ xcodebuild test \
 | Screen | Entry Point | Description |
 |--------|-------------|-------------|
 | `OnboardingView` | App launch (Release: first install / reinstall / version update; DEBUG: always) | 4 steps: intro+mode select → diary+todo → personal event → integration+notifications |
-| `CalendarView` | Default after onboarding | Date hero + 3-row header (util bar / month nav / week strip with weather + left/right swipe ±7 days) + 2-month mini calendar, overdue in red; schedule list shows lunar date + weather icon (temperature) on same line |
+| `CalendarView` | Default after onboarding | Date hero + 3-row header (util bar / month nav / week strip with weather + left/right swipe ±7 days) + 2-month mini calendar, overdue in red; schedule list shows lunar date + weather icon (temperature) on same line; pull schedule list down to refresh weather + events |
 | `EventEditorView` | `+` button tap | Mode-specific event input (time, location, repeat); diary pre-fills `[yyyy.MM.dd]😀수고했어요.` |
 | `SettingsView` | `⚙` button tap | Calendar integration · planner mode · notifications · color scheme (system/dark/light rolling toggle) |
 

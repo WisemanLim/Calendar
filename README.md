@@ -55,7 +55,7 @@ Wise-Calendar/
 | 파일 | 역할 |
 |------|------|
 | `RootView` | 온보딩 분기 (`shouldShowOnboarding` → `.fullScreenCover`) |
-| `CalendarView` | 큰 날짜 히어로(더블탭·롱프레스=이벤트 추가), 헤더(음력+날씨 아이콘+온도 같은 라인), 주간 스트립(좌우 스와이프로 전주·다음주 이동), 하단 2개월 미니 달력, overdue 적색, **이벤트 탭=편집 즉시 진입**, 편집 시트 닫힘 시 캐시 무효화·재로드, 무지개 색상. **비밀 약속**: `[비밀]` prefix 이벤트 `.opacity(0.25)` 흐린 표시. **롱프레스(0.6s)**: `addButtonLongPressed` 플래그로 팝업 즉시 닫힘 방지 |
+| `CalendarView` | 큰 날짜 히어로(더블탭·롱프레스=이벤트 추가), 헤더(음력+날씨 아이콘+온도 같은 라인), 주간 스트립(좌우 스와이프로 전주·다음주 이동), 하단 2개월 미니 달력, overdue 적색, **이벤트 탭=편집 즉시 진입**, 편집 시트 닫힘 시 캐시 무효화·재로드, 무지개 색상. **비밀 약속**: `[비밀]` prefix 이벤트 `.opacity(0.25)` 흐린 표시. **롱프레스(0.6s)**: `addButtonLongPressed` 플래그로 팝업 즉시 닫힘 방지. **풀-투-리프레시**: 일정 목록 영역 아래로 드래그(60pt↑) → 날씨·일정 동기화 (`simultaneousGesture` 수직 판별) |
 | `CalendarLogic` | 그리드 42칸 생성, `dateKey(yyyy-MM-dd)`, SUN-first 정렬 |
 | `CalendarTheme` | `accent/month/year/todayTint/navBackground/sunday/saturday`; `.default` 제공 |
 | `CalendarEventItem` | 이벤트 표시용 값 타입 — `displayTitle("HH:mm 제목")`, `isOverdue`, `isTodo` |
@@ -191,7 +191,7 @@ xcodebuild test \
 | 화면 | 진입 방법 | 설명 |
 |------|-----------|------|
 | `OnboardingView` | 앱 시작 (Release: 최초 설치·재설치·버전 업데이트 / DEBUG: 매회) | 소개+모드선택 → 일기+할일 → 개인이벤트 → 연동+알림 4단계 |
-| `CalendarView` | 온보딩 완료 후 기본 화면 | 큰 날짜 히어로 + 헤더(음력+날씨 아이콘+온도 같은 라인) + 일정 목록 + 하단 미니 달력, overdue 적색 |
+| `CalendarView` | 온보딩 완료 후 기본 화면 | 큰 날짜 히어로 + 헤더(음력+날씨 아이콘+온도 같은 라인) + 일정 목록(아래로 드래그=날씨·일정 새로고침) + 하단 미니 달력, overdue 적색 |
 | `EventEditorView` | `+` 버튼 탭 | 모드별 이벤트 입력 (시간·장소·반복) |
 | `SettingsView` | `⚙` 버튼 탭 | 캘린더 연동 · 플래너 모드 · 알림 · 화면 테마(system/dark/light 롤링) |
 
