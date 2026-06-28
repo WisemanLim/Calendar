@@ -168,9 +168,9 @@ xcodebuild test \
 | `diary` | Editor open time = startDate, save time = endDate | Free text |
 | `todo/할 일` (`isTodo=true`) | due-date DatePicker → startDate = endDate = deadline | `"- [ ] Item"` (checklist) |
 | `todo/회의·세미나·회식` (`isTodo=false`) | Start + end DatePicker + location → EKEvent.location | nil |
-| `personalEvent/medication` | Morning(7h)/Lunch(12h)/Evening(18h)/Emergency preset or custom. Yearly repeat. Photo/camera. | nil |
+| `personalEvent/medication` | Morning(7h)/Lunch(12h)/Evening(18h)/Emergency preset or custom. Repeat toggle + **Individual registration toggle (default ON)**: ON→per-date individual events, OFF→yearly RRULE. Photo/camera. | nil |
 | `personalEvent/appointment` | Start + end DatePicker + location. **Secret**: `[비밀]` prefix → `.opacity(0.25)` display | nil |
-| `personalEvent/fixed` | Start + end time + yearly EKRecurrenceRule | nil |
+| `personalEvent/fixed` | Start + end + repeat toggle + **Individual registration toggle (default ON)**: ON→per-date individual events (pattern substituted), OFF→yearly RRULE | nil |
 
 ### Overdue display (red)
 

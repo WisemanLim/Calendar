@@ -206,9 +206,9 @@ xcodebuild test \
 | `diary` | 에디터 오픈 시각=startDate, 저장 시각=endDate | 자유 텍스트 |
 | `todo/할 일` (`isTodo=true`) | due-date DatePicker → startDate=endDate=기한 | `"- [ ] 항목"` |
 | `todo/회의·세미나·회식` (`isTodo=false`) | 시작·종료 DatePicker + 장소 → EKEvent.location | nil |
-| `personalEvent/medication` | 아침(7h)/점심(12h)/저녁(18h)/임시긴급 프리셋 또는 직접. 반복 토글(yearly). 사진/카메라 첨부. | nil |
+| `personalEvent/medication` | 아침(7h)/점심(12h)/저녁(18h)/임시긴급 프리셋 또는 직접. 반복 토글 + **개별 등록 토글(기본 ON)**: ON→날짜범위 개별 이벤트, OFF→yearly RRULE. 사진/카메라 첨부. | nil |
 | `personalEvent/appointment` | 시작·종료 DatePicker + 장소. **비밀 약속**: `[비밀]` prefix → opacity 0.25 표시 | nil |
-| `personalEvent/fixed` | 시작·종료 + yearly EKRecurrenceRule | nil |
+| `personalEvent/fixed` | 시작·종료 + 반복 토글 + **개별 등록 토글(기본 ON)**: ON→날짜범위 개별 이벤트(패턴 치환), OFF→yearly RRULE | nil |
 
 ### overdue 적색 표시
 

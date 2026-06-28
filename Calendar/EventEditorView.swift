@@ -64,6 +64,7 @@ struct EventEditorView: View {
     @State private var eventLocation = ""
     @State private var medicationPreset: MedicationPreset = .morning
     @State private var repeatEnabled = false
+    @State private var individualRegistration = true
     @State private var repeatFrequency: RepeatFrequency = .yearly
     @State private var selectedWeekdays: Set<Int> = []
     @State private var repeatStartDate: Date
@@ -293,10 +294,39 @@ struct EventEditorView: View {
 
     // MARK: 반복 섹션 (매일·매주·매년 공통)
 
+    private func updateRepeatEndDate() {
+        let cal = Calendar.current
+        switch repeatFrequency {
+        case .daily:  repeatEndDate = cal.date(byAdding: .day,        value: 1, to: repeatStartDate) ?? repeatStartDate
+        case .weekly: repeatEndDate = cal.date(byAdding: .weekOfYear, value: 1, to: repeatStartDate) ?? repeatStartDate
+        case .yearly: repeatEndDate = cal.date(byAdding: .year,       value: 1, to: repeatStartDate) ?? repeatStartDate
+        }
+    }
+
     @ViewBuilder
     private var repeatSection: some View {
         Section(header: Text("반복")) {
-            Toggle("반복 설정", isOn: $repeatEnabled)
+            HStack {
+                Text("반복 설정")
+                Spacer()
+                if repeatEnabled {
+                    Button { individualRegistration.toggle() } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: individualRegistration ? "checkmark.square.fill" : "square")
+                            Text("개별")
+                        }
+                        .font(.subheadline)
+                        .foregroundColor(individualRegistration ? theme.accent : .secondary)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    Spacer().frame(width: 12)
+                }
+                Toggle("", isOn: $repeatEnabled)
+                    .labelsHidden()
+                    .onChange(of: repeatEnabled) { _, enabled in
+                        if enabled { updateRepeatEndDate() }
+                    }
+            }
             if repeatEnabled {
                 Picker("주기", selection: $repeatFrequency) {
                     ForEach(RepeatFrequency.allCases) { Text($0.rawValue).tag($0) }
@@ -304,6 +334,7 @@ struct EventEditorView: View {
                 .pickerStyle(.segmented)
                 .onChange(of: repeatFrequency) { _, f in
                     if f != .weekly { selectedWeekdays = [] }
+                    updateRepeatEndDate()
                 }
                 if repeatFrequency == .weekly {
                     let labels = ["일", "월", "화", "수", "목", "금", "토"]
@@ -327,6 +358,7 @@ struct EventEditorView: View {
                     }
                 }
                 DatePicker("반복 시작일", selection: $repeatStartDate, displayedComponents: .date)
+                    .onChange(of: repeatStartDate) { _, _ in updateRepeatEndDate() }
                 DatePicker("반복 종료일", selection: $repeatEndDate,
                            in: repeatStartDate..., displayedComponents: .date)
             }
@@ -467,6 +499,35 @@ struct EventEditorView: View {
 
     // MARK: canSave / save
 
+    /// 날짜 패턴 + 반복 설정: repeatStartDate~repeatEndDate 범위를 1일씩 순회하며 개별 이벤트 등록.
+    private func saveIndividualEventsForDateRange(notes: String?, startTime: Date, endTime: Date) {
+        let cal = Calendar.current
+        let startHour = cal.component(.hour, from: startTime)
+        let startMin  = cal.component(.minute, from: startTime)
+        let endHour   = cal.component(.hour, from: endTime)
+        let endMin    = cal.component(.minute, from: endTime)
+        var cursor = repeatStartDate
+        while cursor <= repeatEndDate {
+            let t = PlannerLogic.substituteTitlePatterns(title, date: cursor)
+            let s = cal.date(bySettingHour: startHour, minute: startMin, second: 0, of: cursor) ?? cursor
+            let e = cal.date(bySettingHour: endHour, minute: endMin, second: 0, of: cursor) ?? cursor
+            if let eventId = eventStore.addEvent(
+                title: t, notes: notes,
+                startDate: s, endDate: e,
+                isAllDay: false, location: nil, recurrenceRules: nil
+            ) {
+                if notificationsEnabled {
+                    NotificationManager.shared.scheduleEventReminder(title: t, on: s)
+                }
+                if let img = selectedImage {
+                    EventImageStore.shared.saveImage(img, for: eventId)
+                }
+            }
+            guard let next = cal.date(byAdding: .day, value: 1, to: cursor) else { break }
+            cursor = next
+        }
+    }
+
     private var canSave: Bool {
         switch mode {
         case .diary: return !title.isEmpty || !diaryBody.isEmpty
@@ -525,7 +586,11 @@ struct EventEditorView: View {
             case .medication:
                 startDate = eventStartTime
                 endDate = eventStartTime
-                if repeatEnabled {
+                if repeatEnabled && individualRegistration {
+                    saveIndividualEventsForDateRange(notes: nil, startTime: eventStartTime, endTime: eventStartTime)
+                    dismiss()
+                    return
+                } else if repeatEnabled {
                     recurrenceRules = [buildRecurrenceRule(end: EKRecurrenceEnd(end: repeatEndDate))]
                 } else if !hasDatePattern {
                     recurrenceRules = [EKRecurrenceRule(recurrenceWith: .yearly, interval: 1, end: nil)]
@@ -538,7 +603,11 @@ struct EventEditorView: View {
             case .fixed:
                 startDate = eventStartTime
                 endDate = eventEndTime >= eventStartTime ? eventEndTime : eventStartTime
-                if repeatEnabled {
+                if repeatEnabled && individualRegistration {
+                    saveIndividualEventsForDateRange(notes: nil, startTime: eventStartTime, endTime: eventEndTime >= eventStartTime ? eventEndTime : eventStartTime)
+                    dismiss()
+                    return
+                } else if repeatEnabled {
                     recurrenceRules = [buildRecurrenceRule(end: EKRecurrenceEnd(end: repeatEndDate))]
                 } else if !hasDatePattern {
                     recurrenceRules = [EKRecurrenceRule(recurrenceWith: .yearly, interval: 1, end: nil)]

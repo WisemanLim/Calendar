@@ -1,6 +1,6 @@
 # PRD — Wise-Calendar (위클리 플래너 iOS 앱)
 
-> One-Page PRD · 애자일 · 작성일 2026-06-11 · 최종수정 2026-06-26 · 도메인: ict-saas (소비자 iOS 앱)
+> One-Page PRD · 애자일 · 작성일 2026-06-11 · 최종수정 2026-06-28 · 도메인: ict-saas (소비자 iOS 앱)
 > 모르는 값은 `가정:` 으로 표시. 검토 후 확정 필요.
 
 ## 1. Why — 목표 / 문제
@@ -79,9 +79,9 @@
   - **회의·세미나/컨퍼런스·회식** (`isTodo=false`): 시작/종료 시간 `DatePicker` + 장소 텍스트 입력 → EKEvent.location.
 
 - **personalEvent(개인 이벤트)** — 추가 시 카테고리 선택(복용·약속·고정/반복) → 템플릿 선택 → 프리필 입력.
-  - **복용(medication)**: 아침/점심/저녁/임시긴급 4개 템플릿. 아침(7h)/점심(12h)/저녁(18h) 프리셋 버튼 + 직접 입력. 반복 토글(yearly). **사진/카메라** 첨부 — `PhotosPicker`(앨범) 또는 `UIImagePickerController`(카메라), `EventImageStore`에 JPEG 저장.
+  - **복용(medication)**: 아침/점심/저녁/임시긴급 4개 템플릿. 아침(7h)/점심(12h)/저녁(18h) 프리셋 버튼 + 직접 입력. 반복 토글(yearly). **반복 활성 시 개별 등록 토글(기본값: ON)** — ON: 날짜범위 1일씩 순회, 날짜별 패턴 치환 후 개별 이벤트 저장(RRULE 없음); OFF: 단일 RRULE 반복 이벤트. **사진/카메라** 첨부 — `PhotosPicker`(앨범) 또는 `UIImagePickerController`(카메라), `EventImageStore`에 JPEG 저장.
   - **약속(appointment)**: 시작/종료 시각 `DatePicker` + **장소** 텍스트 입력 → EKEvent.location. 템플릿: 연인과 약속·친구와 약속·동호회/이벤트·비밀 약속. **비밀 약속**: titleFormat=`"[비밀] 약속"` → 일정 목록에서 opacity 0.25 흐린 표시.
-  - **고정/반복(fixed)**: 시작/종료 시각 + 반복 토글(yearly `EKRecurrenceRule`). 날짜 패턴 없으면 자동 yearly RRULE.
+  - **고정/반복(fixed)**: 시작/종료 시각 + 반복 토글(yearly). **반복 활성 시 개별 등록 토글(기본값: ON)** — ON: `repeatStartDate`~`repeatEndDate` 1일씩 순회, 날짜별 패턴 치환 후 개별 이벤트 저장(RRULE 없음); OFF: 단일 RRULE 반복 이벤트. 날짜 패턴 없으면 자동 yearly RRULE.
 
 **(B-2) 개인이벤트 타이틀 날짜 패턴 치환**
 
@@ -97,6 +97,9 @@
 패턴 조합 가능: `[정기작업] (d###) yyyy-mm-dd` → `[정기작업] (067) 2026-03-08`
 
 **자동 RRULE**: 날짜 패턴 없는 고정/반복 항목은 저장 시 자동 yearly `EKRecurrenceRule` 생성. 명시적 반복 토글로도 제어 가능.
+
+**반복 + 개별 등록**: 반복 설정 활성화 + 개별 등록 ON(기본값) → `repeatStartDate`~`repeatEndDate` 1일씩 순회하며 각 날짜에 패턴 치환 후 개별 이벤트 저장(RRULE 없음).  
+예: `(d###) [ALG -/-] yyyy-mm-dd` + 2026-07-01~07-02 → `(182) [ALG -/-] 2026-07-01`, `(183) [ALG -/-] 2026-07-02` 각각 개별 등록.
 
 **(C) 템플릿(`EventTemplate`)** — UserDefaults(JSON) 영속. 키: `templates.v3`.
 
@@ -160,7 +163,7 @@
 | medication 시간 | 프리셋 버튼 + 직접 입력, 사진 첨부 |
 | appointment 시간+장소 | 시작·종료 DatePicker + 장소 → EKEvent.location |
 | 비밀 약속 | [비밀] prefix → opacity 0.25 표시 |
-| fixed 반복 | 시작·종료 + yearly EKRecurrenceRule |
+| fixed/medication 반복 | 시작·종료 + 개별 등록 토글: ON→날짜범위 개별 이벤트, OFF→yearly RRULE |
 | 수정 시간 자동조정 | EventEditSheet 시작 시간 변경 시 종료 시간 원본 간격 유지 |
 | 날씨 일별 갱신 | 앱 실행 시 날짜 비교 → 새 날이면 무조건 재조회 |
 | 롱프레스 팝업 | 0.6s, 팝업 뜬 후 즉시 닫힘 없음 |
@@ -199,6 +202,7 @@
 - ~~할 일 체크리스트 업무이벤트 에서 미지원~~ → `EventTemplate.isTodo` 플래그 + 체크리스트 due-date 에디터.
 - ~~비밀 약속 표시 구분 없음~~ → `[비밀]` prefix → `.opacity(0.25)` 흐린 표시.
 - ~~이벤트 수정 시 시작 시간 변경 후 종료 시간 미자동 조정~~ → `EventEditSheet.originalDuration` + onChange 자동 조정.
+- ~~날짜 패턴(`d###`/`yyyy-mm-dd`) + 반복 설정 시 단일 RRULE 이벤트 잘못 생성~~ → `medication`/`fixed` 반복 활성 + 개별 등록 ON → `repeatStartDate~repeatEndDate` 순회, 날짜별 치환 개별 이벤트 저장.
 
 **잔여**
 - `EventStoreManager` 가 `hasAccess` 변경을 구독하지 않음 → 권한 늦은 허용 시 화면 미갱신.

@@ -167,8 +167,9 @@ struct CalendarView: View {
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                     .gesture(
-                        DragGesture()
+                        DragGesture(minimumDistance: 30)
                             .onChanged { value in
+                                guard abs(value.translation.width) > abs(value.translation.height) * 1.2 else { return }
                                 dragOffset = value.translation.width
                                 isDragging = true
                             }
@@ -250,32 +251,35 @@ struct CalendarView: View {
                             if !memos.isEmpty {
                                 ForEach(memos) { memo in
                                     let isSecret = memo.title.hasPrefix("[비밀]")
-                                    HStack(alignment: .top, spacing: 10) {
-                                        Circle()
-                                            .fill(memo.isOverdue ? Color.red : Color.blue)
-                                            .frame(width: 6, height: 6)
-                                            .padding(.top, 6)
-                                        Text(memo.displayTitle)
-                                            .font(.system(size: 16))
-                                            .foregroundColor(memo.isOverdue ? .red : .black)
-                                            .lineLimit(2)
-                                        Spacer()
-                                    }
-                                    .opacity(isSecret ? 0.25 : 1.0)
-                                    .padding(.horizontal, 25)
-                                    .contentShape(Rectangle())
-                                    .onTapGesture { editingEvent = memo }
-                                    .contextMenu {
-                                        Button { copyConfig = EventCopyConfig(item: memo, includeNotes: true) } label: {
-                                            Label("복사 (내용포함)", systemImage: "doc.on.doc")
+                                    SwipeDeleteWrapper(onDelete: { eventStore.deleteEvent(id: memo.id, on: selectedDate) }) {
+                                        HStack(alignment: .top, spacing: 10) {
+                                            Circle()
+                                                .fill(memo.isOverdue ? Color.red : Color.blue)
+                                                .frame(width: 6, height: 6)
+                                                .padding(.top, 6)
+                                            Text(memo.displayTitle)
+                                                .font(.system(size: 16))
+                                                .foregroundColor(memo.isOverdue ? .red : .black)
+                                                .lineLimit(2)
+                                            Spacer()
                                         }
-                                        Button { copyConfig = EventCopyConfig(item: memo, includeNotes: false) } label: {
-                                            Label("복사 (내용제외)", systemImage: "doc.on.doc.fill")
-                                        }
-                                        Button(role: .destructive) {
-                                            eventStore.deleteEvent(id: memo.id, on: selectedDate)
-                                        } label: {
-                                            Label("삭제", systemImage: "trash")
+                                        .opacity(isSecret ? 0.25 : 1.0)
+                                        .padding(.horizontal, 25)
+                                        .contentShape(Rectangle())
+                                        .onTapGesture { editingEvent = memo }
+                                        .contextMenu {
+                                            Button { copyConfig = EventCopyConfig(item: memo, includeNotes: true) } label: {
+                                                Label("복사 (내용포함)", systemImage: "doc.on.doc")
+                                            }
+                                            Button { copyConfig = EventCopyConfig(item: memo, includeNotes: false) } label: {
+                                                Label("복사 (내용제외)", systemImage: "doc.on.doc.fill")
+                                            }
+                                            Button { copyConfig = EventCopyConfig(item: memo, includeNotes: true, isRepeat: true) } label: {
+                                                Label("반복복사 (내용포함)", systemImage: "arrow.triangle.2.circlepath")
+                                            }
+                                            Button { copyConfig = EventCopyConfig(item: memo, includeNotes: false, isRepeat: true) } label: {
+                                                Label("반복복사 (내용제외)", systemImage: "arrow.clockwise")
+                                            }
                                         }
                                     }
                                 }
@@ -891,6 +895,7 @@ struct EventCopyConfig: Identifiable {
     let id = UUID()
     let item: CalendarEventItem
     let includeNotes: Bool
+    var isRepeat: Bool = false
 }
 
 // MARK: - EventCopySheet
@@ -901,6 +906,7 @@ struct EventCopySheet: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var targetDate: Date
+    @State private var repeatEndDate: Date
     @State private var title: String
     @State private var notes: String
     @State private var startHour: Date
@@ -910,20 +916,25 @@ struct EventCopySheet: View {
         self.config = config
         self.eventStore = eventStore
         let ek = eventStore.fetchEvent(id: config.item.id)
-        _targetDate = State(initialValue: Date())
-        _title      = State(initialValue: config.item.title)
-        _notes      = State(initialValue: config.includeNotes ? (ek?.notes ?? "") : "")
-        _startHour  = State(initialValue: ek?.startDate ?? config.item.startDate)
-        _endHour    = State(initialValue: ek?.endDate   ?? config.item.startDate.addingTimeInterval(3600))
+        let today = Date()
+        _targetDate    = State(initialValue: today)
+        _repeatEndDate = State(initialValue: Calendar.current.date(byAdding: .day, value: 1, to: today) ?? today)
+        _title         = State(initialValue: config.item.title)
+        _notes         = State(initialValue: config.includeNotes ? (ek?.notes ?? "") : "")
+        _startHour     = State(initialValue: ek?.startDate ?? config.item.startDate)
+        _endHour       = State(initialValue: ek?.endDate   ?? config.item.startDate.addingTimeInterval(3600))
     }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    DatePicker("복사 날짜", selection: $targetDate, displayedComponents: .date)
+                    DatePicker(config.isRepeat ? "시작일" : "복사 날짜", selection: $targetDate, displayedComponents: .date)
+                    if config.isRepeat {
+                        DatePicker("종료일", selection: $repeatEndDate, in: targetDate..., displayedComponents: .date)
+                    }
                 } header: {
-                    Text("복사할 날짜 선택")
+                    Text(config.isRepeat ? "반복 날짜 범위" : "복사할 날짜 선택")
                 }
 
                 Section("제목") {
@@ -941,12 +952,12 @@ struct EventCopySheet: View {
                     }
                 }
             }
-            .navigationTitle("이벤트 복사")
+            .navigationTitle(config.isRepeat ? "반복 복사" : "이벤트 복사")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("취소") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("복사", action: save)
+                    Button(config.isRepeat ? "반복복사" : "복사", action: save)
                         .disabled(title.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
@@ -963,15 +974,32 @@ struct EventCopySheet: View {
             merged.hour = t.hour; merged.minute = t.minute
             return cal.date(from: merged) ?? date
         }
-        let newStart = combine(date: targetDate, time: startHour)
-        let rawEnd   = combine(date: targetDate, time: endHour)
-        let newEnd   = rawEnd <= newStart ? newStart.addingTimeInterval(3600) : rawEnd
-        _ = eventStore.addEvent(
-            title: title,
-            notes: config.includeNotes && !notes.isEmpty ? notes : nil,
-            startDate: newStart,
-            endDate: newEnd
-        )
+        if config.isRepeat {
+            var cursor = targetDate
+            while cursor <= repeatEndDate {
+                let newStart = combine(date: cursor, time: startHour)
+                let rawEnd   = combine(date: cursor, time: endHour)
+                let newEnd   = rawEnd <= newStart ? newStart.addingTimeInterval(3600) : rawEnd
+                _ = eventStore.addEvent(
+                    title: title,
+                    notes: config.includeNotes && !notes.isEmpty ? notes : nil,
+                    startDate: newStart,
+                    endDate: newEnd
+                )
+                guard let next = cal.date(byAdding: .day, value: 1, to: cursor) else { break }
+                cursor = next
+            }
+        } else {
+            let newStart = combine(date: targetDate, time: startHour)
+            let rawEnd   = combine(date: targetDate, time: endHour)
+            let newEnd   = rawEnd <= newStart ? newStart.addingTimeInterval(3600) : rawEnd
+            _ = eventStore.addEvent(
+                title: title,
+                notes: config.includeNotes && !notes.isEmpty ? notes : nil,
+                startDate: newStart,
+                endDate: newEnd
+            )
+        }
         dismiss()
     }
 }
@@ -1050,5 +1078,50 @@ struct CalendarView_Previews: PreviewProvider {
         CalendarView(settings: AppSettings(defaults: UserDefaults(suiteName: "preview")!),
                      templateStore: TemplateStore(defaults: UserDefaults(suiteName: "preview")!))
             .environment(\.locale, .init(identifier: "en_US"))
+    }
+}
+
+// MARK: - SwipeDeleteWrapper
+private struct SwipeDeleteWrapper<Content: View>: View {
+    let onDelete: () -> Void
+    @ViewBuilder let content: Content
+
+    @State private var offset: CGFloat = 0
+    private let buttonWidth: CGFloat = 72
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            Button(action: {
+                withAnimation(.easeOut(duration: 0.2)) { offset = 0 }
+                onDelete()
+            }) {
+                Image(systemName: "trash")
+                    .foregroundColor(.white)
+                    .frame(width: buttonWidth)
+                    .frame(maxHeight: .infinity)
+            }
+            .background(Color.red)
+            .opacity(offset < -10 ? 1 : 0)
+
+            content
+                .offset(x: offset)
+        }
+        .clipped()
+        .gesture(
+            DragGesture(minimumDistance: 15, coordinateSpace: .local)
+                .onChanged { v in
+                    guard abs(v.translation.width) > abs(v.translation.height) * 1.2 else { return }
+                    if v.translation.width < 0 {
+                        offset = max(v.translation.width, -buttonWidth)
+                    } else if offset < 0 {
+                        offset = min(0, offset + v.translation.width)
+                    }
+                }
+                .onEnded { v in
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        offset = v.translation.width < -(buttonWidth / 2) ? -buttonWidth : 0
+                    }
+                }
+        )
     }
 }
