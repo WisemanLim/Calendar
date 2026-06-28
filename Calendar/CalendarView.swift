@@ -251,35 +251,38 @@ struct CalendarView: View {
                             if !memos.isEmpty {
                                 ForEach(memos) { memo in
                                     let isSecret = memo.title.hasPrefix("[비밀]")
-                                    SwipeDeleteWrapper(onDelete: { eventStore.deleteEvent(id: memo.id, on: selectedDate) }) {
-                                        HStack(alignment: .top, spacing: 10) {
-                                            Circle()
-                                                .fill(memo.isOverdue ? Color.red : Color.blue)
-                                                .frame(width: 6, height: 6)
-                                                .padding(.top, 6)
-                                            Text(memo.displayTitle)
-                                                .font(.system(size: 16))
-                                                .foregroundColor(memo.isOverdue ? .red : .black)
-                                                .lineLimit(2)
-                                            Spacer()
+                                    HStack(alignment: .top, spacing: 10) {
+                                        Circle()
+                                            .fill(memo.isOverdue ? Color.red : Color.blue)
+                                            .frame(width: 6, height: 6)
+                                            .padding(.top, 6)
+                                        Text(memo.displayTitle)
+                                            .font(.system(size: 16))
+                                            .foregroundColor(memo.isOverdue ? .red : .black)
+                                            .lineLimit(2)
+                                        Spacer()
+                                    }
+                                    .opacity(isSecret ? 0.25 : 1.0)
+                                    .padding(.horizontal, 25)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { editingEvent = memo }
+                                    .contextMenu {
+                                        Button { copyConfig = EventCopyConfig(item: memo, includeNotes: true) } label: {
+                                            Label("복사 (내용포함)", systemImage: "doc.on.doc")
                                         }
-                                        .opacity(isSecret ? 0.25 : 1.0)
-                                        .padding(.horizontal, 25)
-                                        .contentShape(Rectangle())
-                                        .onTapGesture { editingEvent = memo }
-                                        .contextMenu {
-                                            Button { copyConfig = EventCopyConfig(item: memo, includeNotes: true) } label: {
-                                                Label("복사 (내용포함)", systemImage: "doc.on.doc")
-                                            }
-                                            Button { copyConfig = EventCopyConfig(item: memo, includeNotes: false) } label: {
-                                                Label("복사 (내용제외)", systemImage: "doc.on.doc.fill")
-                                            }
-                                            Button { copyConfig = EventCopyConfig(item: memo, includeNotes: true, isRepeat: true) } label: {
-                                                Label("반복복사 (내용포함)", systemImage: "arrow.triangle.2.circlepath")
-                                            }
-                                            Button { copyConfig = EventCopyConfig(item: memo, includeNotes: false, isRepeat: true) } label: {
-                                                Label("반복복사 (내용제외)", systemImage: "arrow.clockwise")
-                                            }
+                                        Button { copyConfig = EventCopyConfig(item: memo, includeNotes: false) } label: {
+                                            Label("복사 (내용제외)", systemImage: "doc.on.doc.fill")
+                                        }
+                                        Button { copyConfig = EventCopyConfig(item: memo, includeNotes: true, isRepeat: true) } label: {
+                                            Label("반복복사 (내용포함)", systemImage: "arrow.triangle.2.circlepath")
+                                        }
+                                        Button { copyConfig = EventCopyConfig(item: memo, includeNotes: false, isRepeat: true) } label: {
+                                            Label("반복복사 (내용제외)", systemImage: "arrow.clockwise")
+                                        }
+                                        Button(role: .destructive) {
+                                            eventStore.deleteEvent(id: memo.id, on: selectedDate)
+                                        } label: {
+                                            Label("삭제", systemImage: "trash")
                                         }
                                     }
                                 }
@@ -1081,47 +1084,3 @@ struct CalendarView_Previews: PreviewProvider {
     }
 }
 
-// MARK: - SwipeDeleteWrapper
-private struct SwipeDeleteWrapper<Content: View>: View {
-    let onDelete: () -> Void
-    @ViewBuilder let content: Content
-
-    @State private var offset: CGFloat = 0
-    private let buttonWidth: CGFloat = 72
-
-    var body: some View {
-        ZStack(alignment: .trailing) {
-            Button(action: {
-                withAnimation(.easeOut(duration: 0.2)) { offset = 0 }
-                onDelete()
-            }) {
-                Image(systemName: "trash")
-                    .foregroundColor(.white)
-                    .frame(width: buttonWidth)
-                    .frame(maxHeight: .infinity)
-            }
-            .background(Color.red)
-            .opacity(offset < -10 ? 1 : 0)
-
-            content
-                .offset(x: offset)
-        }
-        .clipped()
-        .gesture(
-            DragGesture(minimumDistance: 15, coordinateSpace: .local)
-                .onChanged { v in
-                    guard abs(v.translation.width) > abs(v.translation.height) * 1.2 else { return }
-                    if v.translation.width < 0 {
-                        offset = max(v.translation.width, -buttonWidth)
-                    } else if offset < 0 {
-                        offset = min(0, offset + v.translation.width)
-                    }
-                }
-                .onEnded { v in
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        offset = v.translation.width < -(buttonWidth / 2) ? -buttonWidth : 0
-                    }
-                }
-        )
-    }
-}
